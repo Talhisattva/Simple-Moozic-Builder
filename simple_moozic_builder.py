@@ -597,25 +597,47 @@ def _collect_audio_sources(src_root: Path) -> list[Path]:
 
 
 def _locate_ffmpeg() -> Optional[str]:
-    candidates = [
-        app_root() / "ffmpeg" / "ffmpeg.exe",
-        app_root() / "ffmpeg.exe",
-    ]
-    for p in candidates:
+    for p in _candidate_binary_paths("ffmpeg.exe"):
         if p.exists() and p.is_file():
             return str(p)
     return shutil.which("ffmpeg")
 
 
 def locate_ffplay() -> Optional[str]:
-    candidates = [
-        app_root() / "ffmpeg" / "ffplay.exe",
-        app_root() / "ffplay.exe",
-    ]
-    for p in candidates:
-        if p.exists() and p.is_file():
-            return str(p)
+    # "ffmplay" typo fallback is intentional for compatibility with misnamed bundles.
+    for binary_name in ("ffplay.exe", "ffmplay.exe"):
+        for p in _candidate_binary_paths(binary_name):
+            if p.exists() and p.is_file():
+                return str(p)
     return shutil.which("ffplay")
+
+
+def _candidate_binary_paths(binary_name: str) -> list[Path]:
+    roots = []
+    seen: set[str] = set()
+    for root in (
+        app_root(),
+        bundled_resource_root(),
+        app_root() / "_internal",
+        bundled_resource_root() / "_internal",
+    ):
+        key = str(root.resolve()) if root.exists() else str(root)
+        if key in seen:
+            continue
+        seen.add(key)
+        roots.append(root)
+
+    rel_dirs = (
+        Path("."),
+        Path("ffmpeg"),
+        Path("bin"),
+        Path("ffmpeg") / "bin",
+    )
+    out: list[Path] = []
+    for root in roots:
+        for rel in rel_dirs:
+            out.append((root / rel / binary_name).resolve())
+    return out
 
 
 def refresh_song_catalog(audio_dir: Path) -> list[AudioTrackEntry]:
