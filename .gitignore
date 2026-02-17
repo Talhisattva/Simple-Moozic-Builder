@@ -29,6 +29,12 @@ Put your .ogg audio here/
 # Optional local binaries
 ffmpeg/
 
+# Optional distribution extras (not required for core app)
+icon16.png
+icon48.png
+icon256.png
+launch_simple_moozic_builder.bat
+
 # Temporary files
 *.tmp
 *.temp

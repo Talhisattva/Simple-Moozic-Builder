@@ -1563,10 +1563,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
                 pass
         if not self._window_icon_images:
             icon_candidates = [
-                base_dir / "icon16.png",
                 base_dir / "icon32.png",
-                base_dir / "icon48.png",
-                base_dir / "icon256.png",
                 base_dir / "icon.png",
             ]
             for p in icon_candidates:
