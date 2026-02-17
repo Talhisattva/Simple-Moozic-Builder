@@ -21,7 +21,7 @@ Output includes:
 ## Requirements
 
 - Windows
-- Python 3.12+ (for running from source)
+- Python 3.12+ (for running from source, exe self contained)
 - Project Zomboid Build 42 setup
 - Parent mod installed if your pack depends on one (example: `\TrueMoozicTali`)
 - Leaving this blank will package all dependant assets in the output
