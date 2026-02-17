@@ -1312,8 +1312,12 @@ class SimpleMoozicBuilderUI(ctk.CTk):
     def _redraw_tree(self) -> None:
         for iid in self.tree.get_children():
             self.tree.delete(iid)
+        seen_iids: set[str] = set()
         for i, row in enumerate(self._visible_rows()):
             key = row["ogg"].name
+            if key in seen_iids:
+                continue
+            seen_iids.add(key)
             cfg = self.track_settings.get(key, {})
             cover = cfg.get("cover")
             if cover:

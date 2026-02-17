@@ -642,7 +642,7 @@ def _candidate_binary_paths(binary_name: str) -> list[Path]:
 
 def refresh_song_catalog(audio_dir: Path) -> list[AudioTrackEntry]:
     src_root, cache_root = ensure_audio_workspace(audio_dir)
-    entries: list[AudioTrackEntry] = []
+    raw_entries: list[AudioTrackEntry] = []
 
     sources = _collect_audio_sources(src_root)
     seen_oggs: set[Path] = set()
@@ -669,16 +669,40 @@ def refresh_song_catalog(audio_dir: Path) -> list[AudioTrackEntry]:
             else:
                 status = "stale"
                 detail = "source newer"
-        entries.append(AudioTrackEntry(source=src, ogg=target, status=status, detail=detail))
+        raw_entries.append(AudioTrackEntry(source=src, ogg=target, status=status, detail=detail))
 
     # Include cache-only OGGs (keeps CLI usable when users only drop OGG into _ogg).
     for ogg in sorted([p for p in cache_root.iterdir() if p.is_file() and p.suffix.lower() == ".ogg"]):
         resolved = ogg.resolve()
         if resolved in seen_oggs:
             continue
-        entries.append(AudioTrackEntry(source=ogg, ogg=ogg, status="ready", detail="cache-only"))
+        raw_entries.append(AudioTrackEntry(source=ogg, ogg=ogg, status="ready", detail="cache-only"))
 
-    return entries
+    # Canonicalize duplicate logical song keys that resolve to the same .ogg filename.
+    # This can happen when users have same-stem files (e.g. song.mp3 + song.ogg).
+    # Prefer source .ogg rows first, then better status.
+    status_rank = {"ready": 3, "stale": 2, "needs convert": 1}
+    deduped: dict[str, AudioTrackEntry] = {}
+    for entry in raw_entries:
+        key = entry.ogg.name
+        keep = deduped.get(key)
+        if keep is None:
+            deduped[key] = entry
+            continue
+        entry_score = (
+            1 if entry.source.suffix.lower() == ".ogg" else 0,
+            status_rank.get(entry.status, 0),
+            entry.source.stat().st_mtime if entry.source.exists() else 0.0,
+        )
+        keep_score = (
+            1 if keep.source.suffix.lower() == ".ogg" else 0,
+            status_rank.get(keep.status, 0),
+            keep.source.stat().st_mtime if keep.source.exists() else 0.0,
+        )
+        if entry_score > keep_score:
+            deduped[key] = entry
+
+    return sorted(deduped.values(), key=lambda e: e.source.name.lower())
 
 
 def collect_available_oggs(audio_dir: Path) -> list[Path]:
