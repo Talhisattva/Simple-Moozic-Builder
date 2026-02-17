@@ -2,7 +2,7 @@
  
  ## Simple Moozic Builder
 
-Simple Moozic Builder is a Windows tool for creating Project Zomboid music-pack mods for Build 42.
+Simple Moozic Builder is a Windows tool. Makes mods for TrueMoozic! (and more)
 
 Workflow: Track intake, conversion, cover processing, script generation, and workshop-ready output.
 
