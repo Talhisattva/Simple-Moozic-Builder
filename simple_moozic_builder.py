@@ -649,10 +649,17 @@ def refresh_song_catalog(audio_dir: Path) -> list[AudioTrackEntry]:
 
     for src in sources:
         target = cache_root / f"{src.stem}.ogg"
+        src_is_ogg = src.suffix.lower() == ".ogg"
         seen_oggs.add(target.resolve())
         if not target.exists():
-            status = "needs convert"
-            detail = "not converted"
+            if src_is_ogg:
+                status = "ready"
+                detail = "source ogg"
+                target = src
+                seen_oggs.add(src.resolve())
+            else:
+                status = "needs convert"
+                detail = "not converted"
         else:
             src_mtime = src.stat().st_mtime
             dst_mtime = target.stat().st_mtime
@@ -672,6 +679,22 @@ def refresh_song_catalog(audio_dir: Path) -> list[AudioTrackEntry]:
         entries.append(AudioTrackEntry(source=ogg, ogg=ogg, status="ready", detail="cache-only"))
 
     return entries
+
+
+def collect_available_oggs(audio_dir: Path) -> list[Path]:
+    src_root, cache_root = ensure_audio_workspace(audio_dir)
+    by_name: dict[str, Path] = {}
+
+    # Prefer converted cache when present.
+    for p in sorted([x for x in cache_root.iterdir() if x.is_file() and x.suffix.lower() == ".ogg"]):
+        by_name[p.name] = p
+
+    # Fall back to source-root OGG files when no cache entry exists yet.
+    for p in sorted([x for x in src_root.iterdir() if x.is_file() and x.suffix.lower() == ".ogg"]):
+        if p.name not in by_name:
+            by_name[p.name] = p
+
+    return sorted(by_name.values(), key=lambda x: x.name.lower())
 
 
 def convert_audio_library(
@@ -1867,7 +1890,7 @@ def build_mixed_from_config(config: dict, on_track: Optional[Callable[[BuildTrac
     if not fallback_cover.exists():
         raise SystemExit(f"Fallback cover not found: {fallback_cover}")
 
-    all_oggs = find_oggs(audio_cache_root(base_audio_dir))
+    all_oggs = collect_available_oggs(base_audio_dir)
     ogg_by_name = {p.name: p for p in all_oggs}
 
     track_modes = config.get("track_modes") or {}
