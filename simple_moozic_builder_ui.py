@@ -8,6 +8,8 @@ import shutil
 import subprocess
 import sys
 import threading
+import traceback
+from datetime import datetime
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -45,6 +47,20 @@ STATE_SCHEMA_VERSION = 1
 LAST_STATE_FILENAME = ".smb_last_state.json"
 RECENT_LIST_FILENAME = ".smb_recent.json"
 RECENT_LIMIT = 20
+CRASH_LOG_FILENAME = "simple_moozic_builder_crash.log"
+
+KEYCODE_A = 65
+KEYCODE_S = 83
+
+
+def _write_crash_log(exc_type, exc_value, exc_traceback, context: str = "Unhandled exception") -> Path:
+    log_path = app_root() / CRASH_LOG_FILENAME
+    lines = traceback.format_exception(exc_type, exc_value, exc_traceback)
+    stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with log_path.open("a", encoding="utf-8") as f:
+        f.write(f"\n[{stamp}] {context}\n")
+        f.writelines(lines)
+    return log_path
 
 
 class Tooltip:
@@ -390,8 +406,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         self.tree.bind("<Double-1>", self.on_tree_double_click)
         self.tree.bind("<Button-3>", self.on_tree_right_click)
         self.tree.bind("<Delete>", self.on_delete_key)
-        self.tree.bind("<Control-a>", self.on_tree_select_all)
-        self.tree.bind("<Control-A>", self.on_tree_select_all)
+        self.tree.bind("<Control-KeyPress>", self._on_tree_ctrl_key, add="+")
         self.tree.bind("<ButtonRelease-1>", self.on_tree_release)
         self.tree.bind("<Motion>", self.on_tree_motion)
         self.tree.bind("<Leave>", self.on_tree_leave)
@@ -446,11 +461,26 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         self.configure(menu=self.menu_bar)
 
     def _bind_shortcuts(self) -> None:
-        self.bind_all("<Control-s>", self._on_ctrl_s)
+        self.bind_all("<Control-KeyPress>", self._on_ctrl_keypress, add="+")
 
     def _on_ctrl_s(self, _event=None):
         self.menu_save()
         return "break"
+
+    def _is_key(self, event, target_keycode: int, target_keysym: str) -> bool:
+        keysym = (getattr(event, "keysym", "") or "").lower()
+        keycode = getattr(event, "keycode", None)
+        return keycode == target_keycode or keysym == target_keysym
+
+    def _on_ctrl_keypress(self, event):
+        if self._is_key(event, KEYCODE_S, "s"):
+            return self._on_ctrl_s(event)
+        return None
+
+    def _on_tree_ctrl_key(self, event):
+        if self._is_key(event, KEYCODE_A, "a"):
+            return self.on_tree_select_all(event)
+        return None
 
     def _state_file(self) -> Path:
         return app_root() / LAST_STATE_FILENAME
@@ -990,11 +1020,16 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             files_tree.configure(cursor="")
             self._hide_hover_tip()
 
+        def on_popup_tree_ctrl_key(event):
+            if self._is_key(event, KEYCODE_A, "a"):
+                files_tree.selection_set(files_tree.get_children())
+                return "break"
+            return None
+
         files_tree.bind("<Button-1>", on_popup_tree_click)
         files_tree.bind("<ButtonRelease-1>", on_popup_tree_release)
         files_tree.bind("<Delete>", lambda _e=None: (remove_selected_files(), "break")[1])
-        files_tree.bind("<Control-a>", lambda _e=None: (files_tree.selection_set(files_tree.get_children()), "break")[1])
-        files_tree.bind("<Control-A>", lambda _e=None: (files_tree.selection_set(files_tree.get_children()), "break")[1])
+        files_tree.bind("<Control-KeyPress>", on_popup_tree_ctrl_key, add="+")
         files_tree.bind("<Motion>", on_popup_tree_motion)
         files_tree.bind("<Leave>", on_popup_tree_leave)
 
@@ -1200,9 +1235,9 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             self.poster_thumb_top = None
 
     def manual_refresh_songs(self) -> None:
-        self.refresh_songs(recover_if_empty=True)
+        self.refresh_songs()
 
-    def refresh_songs(self, recover_if_empty: bool = False) -> None:
+    def refresh_songs(self) -> None:
         self.audio_dir_active = self._pick_active_audio_dir()
         rows = refresh_song_catalog(self.audio_dir_active)
         all_keys = {r.ogg.name for r in rows}
@@ -1214,9 +1249,6 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             for r in rows
             if r.ogg.name not in self.excluded_oggs
         ]
-        if recover_if_empty and not visible_rows and rows and self.excluded_oggs:
-            self.excluded_oggs.clear()
-            visible_rows = [{"source": r.source, "ogg": r.ogg, "status": r.status, "detail": r.detail} for r in rows]
 
         self.track_rows = visible_rows
 
@@ -1552,6 +1584,17 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             except Exception:
                 pass
             self._hover_tip_window = None
+
+    def report_callback_exception(self, exc, val, tb):
+        log_path = _write_crash_log(exc, val, tb, context="Tk callback exception")
+        try:
+            messagebox.showerror(
+                "Unexpected Error",
+                f"An unexpected error occurred.\n\nA crash log was written to:\n{log_path}",
+                parent=self,
+            )
+        except Exception:
+            pass
 
     def _apply_window_icon(self, window: tk.Misc) -> None:
         base_dir = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
@@ -2043,6 +2086,21 @@ class SimpleMoozicBuilderUI(ctk.CTk):
 
 
 if __name__ == "__main__":
+    def _global_excepthook(exc_type, exc_value, exc_traceback):
+        _write_crash_log(exc_type, exc_value, exc_traceback, context="Global exception")
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+
+    sys.excepthook = _global_excepthook
+    if hasattr(threading, "excepthook"):
+        def _thread_excepthook(args):
+            _write_crash_log(
+                args.exc_type,
+                args.exc_value,
+                args.exc_traceback,
+                context=f"Thread exception: {args.thread.name}",
+            )
+        threading.excepthook = _thread_excepthook
+
     app = SimpleMoozicBuilderUI()
     app.mainloop()
 
