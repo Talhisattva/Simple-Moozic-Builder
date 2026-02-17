@@ -1,4 +1,6 @@
-﻿## Simple Moozic Builder
+<img width="300" height="300" alt="SMBLOGO300" src="https://github.com/user-attachments/assets/336ac86c-2487-4efe-9e06-8355abb2d7e6" />
+ 
+ ## Simple Moozic Builder
 
 Simple Moozic Builder is a Windows tool for creating Project Zomboid music-pack mods for Build 42.
 
