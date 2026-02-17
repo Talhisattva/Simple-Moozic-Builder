@@ -8,12 +8,13 @@ It is built for the True MooZic ecosystem and covers the full workflow: track in
 
 Use this when you want to build a companion mod that adds cassette and vinyl media items mapped to real songs.
 
-Typical output includes:
+Output includes:
 - Cassette items
 - Vinyl record + vinyl album/sleeve items
 - Music definition Lua files
 - Script/model/texture references
 - `mod.info` and `workshop.txt` scaffolding
+- no distrubtion - minimal asset packaging
 
 ## Requirements
 
@@ -21,6 +22,7 @@ Typical output includes:
 - Python 3.12+ (for running from source)
 - Project Zomboid Build 42 setup
 - Parent mod installed if your pack depends on one (example: `\TrueMoozicTali`)
+- Leaving this blank will package all dependant assets in the output
 
 ## Quick Start
 
@@ -39,7 +41,7 @@ Configure base metadata:
 - Mod ID
 - Mod Name
 - Parent Mod dependency
-- Author
+- Author(s)
 - Poster/preview image
 
 ### 2. Song Table
@@ -55,11 +57,10 @@ Manage tracks in one place:
 ### 3. Cover Pipeline
 
 Supports both quick and advanced cover flows:
-- Poster override across all songs
-- Mod-default assignment behavior
-- Cassette/vinyl masking workflow
+- Poster override or Mod default (random base texture) for all covers
+- Cassette/vinyl masking for all non-default covers 
 - Vinyl inner/outer mask options
-- High-resolution texture export (HR path support)
+- High-resolution texture export (HR path support - Max 2048 x 2048) for inspecting album covers.
 
 ### 4. Build + Export
 
@@ -69,10 +70,11 @@ Build process generates a ready-to-publish mod folder structure and can copy out
 
 - End-to-end music-pack generation
 - Built-in ffmpeg conversion pipeline
-- A-side / B-side media support
+- A-side / B-side media support - New Flip Feature in base mod
 - Batch operations for cassette/vinyl toggles
 - Save/load project state and recent files
 - Mod metadata + dependency generation
+- Make your own mix! Create Mix lets you generate a multi-song sound file on the go. 
 
 ## Hotkeys
 
@@ -88,7 +90,7 @@ Build process generates a ready-to-publish mod folder structure and can copy out
 
 ## Example Usage in Workshop
 
-You can publish a generated pack (for example, TaliMix) and reference this repo in its workshop description as the builder used to create it.
+You can publish a generated pack (for example, TaliMix) and reference this repo in its workshop description as the builder used to create it. Thank you :) 
 
 ## License
 
