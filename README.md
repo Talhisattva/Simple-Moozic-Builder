@@ -38,27 +38,17 @@ Building music packs by hand is slow and error-prone. Simple Moozic Builder give
 5. Build and review generated output under `OUTPUT/`.
 6. Publish generated pack to workshop from your normal mod upload workflow.
 
-## Build From Source
-
-```bat
-cd "Simple Moozic Builder"
-build_exe.bat
-```
-
-Output will be produced in:
-
-- `dist/SimpleMoozicBuilder/`
+## Build From Source`r`n`r`nBuild from source using your preferred PyInstaller command for `simple_moozic_builder_ui.py`.
 
 ## Repository Layout
 
 - `simple_moozic_builder_ui.py` - main UI application
 - `simple_moozic_builder.py` - build/export logic
 - `assets/` - template and mask assets
-- `build_exe.bat` - local Windows packaging helper
 
 ## Example Pack
 
-An example generated pack can be published separately (for example, **TaliMix**) and linked back here as: ìBuilt with Simple Moozic Builderî.
+An example generated pack can be published separately (for example, **TaliMix**) and linked back here as: ‚ÄúBuilt with Simple Moozic Builder‚Äù.
 
 ## Contributing
 
