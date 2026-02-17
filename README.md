@@ -1,61 +1,95 @@
-# Simple Moozic Builder
+﻿# Simple Moozic Builder
 
-A practical Project Zomboid pack builder for creating cassette/vinyl companion mods with real music tracks for **Build 42**.
+Simple Moozic Builder is a Windows tool for creating Project Zomboid music-pack mods for Build 42.
 
-This tool is designed to work with the **True MooZic** ecosystem and helps you generate workshop-ready music packs quickly, including:
+It is built for the True MooZic ecosystem and covers the full workflow: track intake, conversion, cover processing, script generation, and workshop-ready output.
 
-- Cassette and vinyl item generation
-- Optional A-side / B-side media pairing
-- Built-in audio conversion workflow via bundled ffmpeg
-- Cover workflow with poster override, defaults, and texture masking
-- Build output preview and mod packaging utilities
+## What This Tool Is For
 
-## Why This Exists
+Use this when you want to build a companion mod that adds cassette and vinyl media items mapped to real songs.
 
-Building music packs by hand is slow and error-prone. Simple Moozic Builder gives Zomboid modders a consistent workflow for creating child packs that plug into a base True MooZic parent mod.
-
-## Features
-
-- Build cassettes and vinyls from your song list
-- B-side mapping support (where provided)
-- Track-level art controls + mod-wide poster defaults
-- Vinyl inner/outer mask generation
-- Batch conversion status and build summaries
-- Optional copy-to-workshop convenience flow
+Typical output includes:
+- Cassette items
+- Vinyl record + vinyl album/sleeve items
+- Music definition Lua files
+- Script/model/texture references
+- `mod.info` and `workshop.txt` scaffolding
 
 ## Requirements
 
 - Windows
-- Project Zomboid Build 42 environment
-- Parent mod installed if your generated pack uses a `require=` dependency (for example `\TrueMoozicTali`)
+- Python 3.12+ (for running from source)
+- Project Zomboid Build 42 setup
+- Parent mod installed if your pack depends on one (example: `\TrueMoozicTali`)
 
 ## Quick Start
 
-1. Launch `SimpleMoozicBuilder.exe` from a release build, or run `simple_moozic_builder_ui.py` from source.
-2. Set your audio/image source folders.
-3. Add tracks and choose cassette/vinyl output per row.
-4. Configure poster/default cover behavior.
-5. Build and review generated output under `OUTPUT/`.
-6. Publish generated pack to workshop from your normal mod upload workflow.
+1. Start `simple_moozic_builder_ui.py` (or the packaged EXE from a release).
+2. Set your audio source and image source folders.
+3. Add songs to the table and choose Cassette/Vinyl per track.
+4. Set cover behavior (poster override or mod-default behavior).
+5. Build and inspect output.
+6. Upload generated pack through your normal workshop flow.
 
-## Build From Source`r`n`r`nBuild from source using your preferred PyInstaller command for `simple_moozic_builder_ui.py`.
+## Main Workflow
 
-## Repository Layout
+### 1. Project Setup
 
-- `simple_moozic_builder_ui.py` - main UI application
-- `simple_moozic_builder.py` - build/export logic
-- `assets/` - template and mask assets
+Configure base metadata:
+- Mod ID
+- Mod Name
+- Parent Mod dependency
+- Author
+- Poster/preview image
 
-## Example Pack
+### 2. Song Table
 
-An example generated pack can be published separately (for example, **TaliMix**) and linked back here as: “Built with Simple Moozic Builder”.
+Manage tracks in one place:
+- Add/remove songs
+- Toggle cassette and vinyl output
+- Optional B-side assignment
+- Per-song cover assignment
+- Per-row preview playback
+- Convert status tracking
 
-## Contributing
+### 3. Cover Pipeline
 
-Contributions are welcome, but this is maintainer-led and optimized for practical modding workflows.
+Supports both quick and advanced cover flows:
+- Poster override across all songs
+- Mod-default assignment behavior
+- Cassette/vinyl masking workflow
+- Vinyl inner/outer mask options
+- High-resolution texture export (HR path support)
 
-See `CONTRIBUTING.md`.
+### 4. Build + Export
+
+Build process generates a ready-to-publish mod folder structure and can copy output to workshop paths as configured.
+
+## Key Features
+
+- End-to-end music-pack generation
+- Built-in ffmpeg conversion pipeline
+- A-side / B-side media support
+- Batch operations for cassette/vinyl toggles
+- Save/load project state and recent files
+- Mod metadata + dependency generation
+
+## Hotkeys
+
+- `Ctrl+S` Save project
+- `Ctrl+A` Select all songs
+- `Delete` Remove selected songs
+
+## Repo Layout
+
+- `simple_moozic_builder_ui.py` - UI and interaction logic
+- `simple_moozic_builder.py` - build/export and generation logic
+- `assets/` - masks, templates, and texture/model assets
+
+## Example Usage in Workshop
+
+You can publish a generated pack (for example, TaliMix) and reference this repo in its workshop description as the builder used to create it.
 
 ## License
 
-MIT License. See `LICENSE`.
+MIT. See `LICENSE`.
