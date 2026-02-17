@@ -1,0 +1,105 @@
+[h2]Simple Moozic Builder[/h2]
+[b]Simple Moozic Builder is a Windows tool for creating Project Zomboid Build 42 music-pack mods.[/b]
+
+[quote]
+[b]Built for the True MooZic ecosystem:[/b] intake tracks, convert audio, process covers, generate scripts, and output a workshop-ready companion pack.
+[/quote]
+
+[h2]What This Tool Does[/h2]
+[b]Create companion mods[/b] that add real-song media items to the game, including:
+[list]
+[*]Cassette items
+[*]Vinyl record + vinyl album/sleeve items
+[*]Music definition Lua files
+[*]Script/model/texture references
+[*]mod.info and workshop.txt scaffolding
+[*]No distribution by default + minimal asset packaging
+[/list]
+
+[h2]Requirements[/h2]
+[list]
+[*]Windows
+[*]Project Zomboid Build 42
+[*]Parent mod installed if your pack depends on one (example: \TrueMoozicTali)
+[*]Leaving Parent Mod blank packages dependent assets in output
+[/list]
+
+[h2]Quick Start[/h2]
+[list]
+[*]Launch the builder
+[*]Set audio source and image source folders
+[*]Add songs and choose Cassette/Vinyl per row
+[*]Set cover behavior (Poster Override or Mod Default)
+[*]Build and review output
+[*]Upload the generated mod using your normal workshop flow
+[/list]
+
+[h2]Main Workflow[/h2]
+[b]1) Project Setup[/b]
+[list]
+[*]Mod ID
+[*]Mod Name
+[*]Parent Mod dependency
+[*]Author(s)
+[*]Poster / preview image
+[/list]
+
+[b]2) Song Table[/b]
+[list]
+[*]Add / remove songs
+[*]Toggle cassette and vinyl output
+[*]Optional B-side assignment
+[*]Per-song cover assignment
+[*]Per-row preview playback
+[*]Convert status tracking
+[/list]
+
+[b]3) Cover Pipeline[/b]
+[list]
+[*]Poster override or Mod Default (random base texture) for all covers
+[*]Cassette/vinyl masking for all non-default covers
+[*]Vinyl inner / outer mask options
+[*]High-resolution texture export (HR path support, max 2048x2048) for album inspect support
+[/list]
+
+[b]4) Build + Export[/b]
+[list]
+[*]Generates a ready-to-publish mod folder structure
+[*]Supports copying output into workshop paths
+[/list]
+
+[h2]Key Features[/h2]
+[list]
+[*][b]Built-in ffmpeg conversion pipeline[/b]
+[*][b]A-side / B-side support[/b] for media items with base-mod flip support
+[*][b]Batch operations[/b] for cassette/vinyl toggles
+[*][b]Save/load project state[/b] plus recent files
+[*][b]Metadata + dependency generation[/b]
+[*][b]Create Mix[/b] to generate multi-song audio files directly in the builder
+[/list]
+
+[h2]Keybinds[/h2]
+[table]
+[tr]
+[th]Action[/th]
+[th]Keybind[/th]
+[/tr]
+[tr]
+[td]Save Project[/td]
+[td]Ctrl+S[/td]
+[/tr]
+[tr]
+[td]Select All Songs[/td]
+[td]Ctrl+A[/td]
+[/tr]
+[tr]
+[td]Remove Selected Songs[/td]
+[td]Delete[/td]
+[/tr]
+[/table]
+
+[h2]Notes[/h2]
+[list]
+[*][b]Child packs can be generated to rely on parent mod assets[/b] when configured for TrueMoozic/TrueMoozicTali.
+[*]Designed to keep pack creation repeatable and workshop-friendly.
+[/list]
