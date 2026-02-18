@@ -597,6 +597,27 @@ def write_workshop(root: Path, name: str, songs: Optional[list[str]] = None) -> 
     write(root / "workshop.txt", content)
 
 
+def workshop_song_lines(oggs: list[Path], song_b_sides: Optional[dict[str, Path | str]] = None) -> list[str]:
+    out: list[str] = []
+    b_map = song_b_sides or {}
+    for ogg in oggs:
+        a_side = display_name_from_file(ogg)
+        b_raw = b_map.get(ogg.name)
+        b_side_name = ""
+        if b_raw:
+            try:
+                b_path = Path(b_raw)
+                if b_path.exists() and b_path.is_file():
+                    b_side_name = display_name_from_file(b_path)
+            except Exception:
+                b_side_name = ""
+        if b_side_name:
+            out.append(f"{a_side} | B-Side: {b_side_name}")
+        else:
+            out.append(a_side)
+    return out
+
+
 def audio_source_root(audio_dir: Path) -> Path:
     return audio_dir.parent if audio_dir.name == AUDIO_CACHE_FOLDER_NAME else audio_dir
 
@@ -1462,7 +1483,11 @@ def build_cassette(args, on_track: Optional[Callable[[BuildTrackEvent], None]] =
         getattr(args, "parent_mod_id", "TrueMoozic"),
         getattr(args, "author", "local-builder"),
     )
-    write_workshop(paths["root"], args.name, [display_name_from_file(p) for p in oggs])
+    write_workshop(
+        paths["root"],
+        args.name,
+        workshop_song_lines(oggs, getattr(args, "song_b_sides", {}) or {}),
+    )
     write_workshop_images(
         paths,
         args.workshop_cover,
@@ -1714,7 +1739,11 @@ def build_vinyl(args, on_track: Optional[Callable[[BuildTrackEvent], None]] = No
         getattr(args, "parent_mod_id", "TrueMoozic"),
         getattr(args, "author", "local-builder"),
     )
-    write_workshop(paths["root"], args.name, [display_name_from_file(p) for p in oggs])
+    write_workshop(
+        paths["root"],
+        args.name,
+        workshop_song_lines(oggs, getattr(args, "song_b_sides", {}) or {}),
+    )
     write_workshop_images(
         paths,
         args.workshop_cover,
