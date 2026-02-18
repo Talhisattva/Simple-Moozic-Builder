@@ -754,9 +754,20 @@ def _convert_with_soundfile(source: Path, target: Path) -> None:
         raise SystemExit("soundfile backend unavailable (requires soundfile + numpy).")
     pcm, sr = _decode_to_pcm16(source, target_rate=44100, target_channels=2)
     target.parent.mkdir(parents=True, exist_ok=True)
-    # Vorbis encoding is more stable via float32 input on Windows builds.
-    pcm_f32 = pcm.astype(np.float32) / 32768.0
-    sf.write(str(target), pcm_f32, sr, format="OGG", subtype="VORBIS")
+    with sf.SoundFile(
+        str(target),
+        mode="w",
+        samplerate=sr,
+        channels=2,
+        format="OGG",
+        subtype="VORBIS",
+    ) as out_sf:
+        if pcm.shape[0] == 0:
+            return
+        frame_step = 16384
+        for i in range(0, pcm.shape[0], frame_step):
+            chunk = np.ascontiguousarray(pcm[i : i + frame_step], dtype=np.int16)
+            out_sf.buffer_write(chunk.tobytes(), dtype="int16")
 
 
 def _create_mix_with_soundfile(source_files: list[Path], out_path: Path) -> None:
@@ -776,14 +787,14 @@ def _create_mix_with_soundfile(source_files: list[Path], out_path: Path) -> None
         for src in source_files:
             _audio_trace(f"decode start: {src}")
             pcm, _ = _decode_to_pcm16(src, target_rate=44100, target_channels=2)
-            pcm_f32 = pcm.astype(np.float32) / 32768.0
-            if pcm_f32.shape[0] == 0:
+            if pcm.shape[0] == 0:
                 _audio_trace(f"skip empty: {src}")
                 continue
             frame_step = 16384
-            _audio_trace(f"write start: {src} frames={pcm_f32.shape[0]}")
-            for i in range(0, pcm_f32.shape[0], frame_step):
-                out_sf.write(pcm_f32[i : i + frame_step])
+            _audio_trace(f"write start: {src} frames={pcm.shape[0]}")
+            for i in range(0, pcm.shape[0], frame_step):
+                chunk = np.ascontiguousarray(pcm[i : i + frame_step], dtype=np.int16)
+                out_sf.buffer_write(chunk.tobytes(), dtype="int16")
             _audio_trace(f"write done: {src}")
         _audio_trace(f"soundfile mix done: out={out_path}")
 

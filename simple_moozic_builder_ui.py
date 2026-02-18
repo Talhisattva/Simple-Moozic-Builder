@@ -1702,7 +1702,10 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             if self.preview_proc is None:
                 self.status_var.set(self._preview_unavailable_message())
                 return
-            self.status_var.set(f"Previewing ({backend}): {row['source'].name}")
+            if backend == "miniaudio" and self.preview_ffplay is None:
+                self.status_var.set(f"Previewing: {row['source'].name}")
+            else:
+                self.status_var.set(f"Previewing ({backend}): {row['source'].name}")
         except Exception as e:
             self.preview_proc = None
             self.status_var.set(f"Preview failed: {e}")
