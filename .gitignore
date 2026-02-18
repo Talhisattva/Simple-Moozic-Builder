@@ -16,6 +16,7 @@ __pycache__/
 build/
 dist/
 *.spec
+!SimpleMoozicBuilder.spec
 
 # Local app state / projects
 .smb_last_state.json
