@@ -560,7 +560,7 @@ def write_workshop(root: Path, name: str, songs: Optional[list[str]] = None) -> 
         "version=1",
         "id=",
         f"title={name}",
-        "description=[i] Generated with Simple Moozic builder [/i]",
+        "description=[i] Generated with Simple Moozic Builder [/i]",
         f"description=[h2]{name}[/h2]",
     ]
     if songs:
