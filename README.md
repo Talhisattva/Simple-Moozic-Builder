@@ -22,9 +22,29 @@ Output includes:
 
 - Windows
 - Python 3.12+ (for running from source, exe self contained)
+- Python dependencies listed in `requirements.txt`
 - Project Zomboid Build 42 setup
 - Parent mod installed if your pack depends on one (example: `\TrueMoozicTali`)
 - Leaving this blank will package all dependant assets in the output
+
+## Contributor Setup (One Command)
+
+From repo root in PowerShell:
+
+`.\setup_dev.ps1`
+
+From repo root on Linux/macOS:
+
+`./setup_dev.sh`
+
+Optional (also install ffmpeg globally via winget):
+
+`.\setup_dev.ps1 -InstallFfmpeg`
+
+Then:
+
+1. `.\.venv\Scripts\Activate.ps1`
+2. `python .\simple_moozic_builder_ui.py`
 
 ## Quick Start
 
@@ -72,6 +92,15 @@ Build process generates a ready-to-publish mod folder structure and can copy out
 
 - End-to-end music-pack generation
 - Built-in ffmpeg conversion pipeline
+- Experimental preview backend switch (miniaudio when installed, ffplay fallback)
+- Experimental conversion backend switch via env var:
+  - `SMB_AUDIO_BACKEND=auto` (default: prefer soundfile if installed, fallback ffmpeg)
+  - `SMB_AUDIO_BACKEND=soundfile` (force soundfile path)
+  - `SMB_AUDIO_BACKEND=ffmpeg` (force ffmpeg path)
+- Mix/stitch creation follows the same backend policy:
+  - `auto`: try soundfile first, fallback to ffmpeg
+  - `soundfile`: soundfile only (fail fast if unavailable)
+  - `ffmpeg`: ffmpeg only
 - A-side / B-side media support - New Flip Feature in base mod
 - Batch operations for cassette/vinyl toggles
 - Save/load project state and recent files

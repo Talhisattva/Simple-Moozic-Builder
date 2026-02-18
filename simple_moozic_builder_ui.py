@@ -8,7 +8,10 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 import traceback
+import faulthandler
+import atexit
 from datetime import datetime
 from pathlib import Path
 import tkinter as tk
@@ -20,6 +23,11 @@ except Exception as e:  # pragma: no cover
     raise SystemExit("CustomTkinter is required. Install with: pip install customtkinter") from e
 
 from PIL import Image
+
+try:  # Optional spike dependency for preview playback.
+    import miniaudio  # type: ignore
+except Exception:
+    miniaudio = None
 
 from simple_moozic_builder import (
     _safe_song_stem,
@@ -48,6 +56,7 @@ LAST_STATE_FILENAME = ".smb_last_state.json"
 RECENT_LIST_FILENAME = ".smb_recent.json"
 RECENT_LIMIT = 20
 CRASH_LOG_FILENAME = "simple_moozic_builder_crash.log"
+FATAL_LOG_FILENAME = "simple_moozic_builder_fatal.log"
 MAX_PREVIEW_TILES = 80
 
 KEYCODE_A = 65
@@ -62,6 +71,65 @@ def _write_crash_log(exc_type, exc_value, exc_traceback, context: str = "Unhandl
         f.write(f"\n[{stamp}] {context}\n")
         f.writelines(lines)
     return log_path
+
+
+_FAULT_HANDLER_STREAM = None
+
+
+def _enable_fatal_fault_log() -> None:
+    global _FAULT_HANDLER_STREAM
+    if _FAULT_HANDLER_STREAM is not None:
+        return
+    log_path = app_root() / FATAL_LOG_FILENAME
+    stream = log_path.open("a", encoding="utf-8")
+    _FAULT_HANDLER_STREAM = stream
+    faulthandler.enable(file=stream, all_threads=True)
+    atexit.register(stream.close)
+
+
+class _MiniAudioPreviewHandle:
+    def __init__(self, audio_path: Path):
+        self._audio_path = audio_path
+        self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._device = None
+        self._start()
+
+    def _start(self) -> None:
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        if miniaudio is None:
+            return
+        try:
+            stream = miniaudio.stream_file(str(self._audio_path))
+            self._device = miniaudio.PlaybackDevice()
+            self._device.start(stream)
+            while not self._stop_event.is_set():
+                time.sleep(0.05)
+        except Exception:
+            pass
+        finally:
+            dev = self._device
+            self._device = None
+            if dev is not None:
+                try:
+                    dev.close()
+                except Exception:
+                    pass
+
+    def terminate(self) -> None:
+        self._stop_event.set()
+
+    def kill(self) -> None:
+        self._stop_event.set()
+
+    def wait(self, timeout: float | None = None) -> None:
+        t = self._thread
+        if t is None:
+            return
+        t.join(timeout=timeout)
 
 
 class Tooltip:
@@ -192,9 +260,14 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         self.recent_projects: list[str] = []
         self.last_save_path: Path | None = None
         self.inline_editor = None
-        self.preview_proc: subprocess.Popen | None = None
+        self.preview_proc: object | None = None
         self.preview_ffplay = locate_ffplay()
-        self._aux_preview_procs: list[subprocess.Popen] = []
+        self.preview_backend = "ffplay"
+        if miniaudio is not None:
+            self.preview_backend = "miniaudio"
+        if os.environ.get("SMB_PREVIEW_BACKEND", "").strip().lower() == "ffplay":
+            self.preview_backend = "ffplay"
+        self._aux_preview_procs: list[object] = []
         self._hover_tip_window: tk.Toplevel | None = None
         self._window_icon_image: tk.PhotoImage | None = None
         self._window_icon_images: list[tk.PhotoImage] = []
@@ -945,7 +1018,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         files_tree.pack(side="left", fill="both", expand=True)
         yscroll.pack(side="right", fill="y")
         song_files: list[Path] = []
-        popup_preview_proc: subprocess.Popen | None = None
+        popup_preview_proc: object | None = None
         build_in_progress = {"value": False}
 
         def redraw_files() -> None:
@@ -1006,17 +1079,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             nonlocal popup_preview_proc
             if popup_preview_proc is None:
                 return
-            try:
-                popup_preview_proc.terminate()
-            except Exception:
-                pass
-            try:
-                popup_preview_proc.wait(timeout=0.4)
-            except Exception:
-                try:
-                    popup_preview_proc.kill()
-                except Exception:
-                    pass
+            self._stop_audio_handle(popup_preview_proc, timeout=0.4)
             try:
                 if popup_preview_proc in self._aux_preview_procs:
                     self._aux_preview_procs.remove(popup_preview_proc)
@@ -1033,19 +1096,16 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             idx = int(row_id) - 1
             if idx < 0 or idx >= len(song_files):
                 return "break"
-            if self.preview_ffplay is None:
+            if self.preview_backend == "ffplay" and self.preview_ffplay is None:
                 build_msg_var.set("Preview unavailable: ffplay not found")
                 return "break"
             src = song_files[idx]
             stop_popup_preview()
-            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
             try:
-                popup_preview_proc = subprocess.Popen(
-                    [self.preview_ffplay, "-nodisp", "-autoexit", "-loglevel", "quiet", str(src)],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    creationflags=flags,
-                )
+                popup_preview_proc = self._start_audio_preview(src)
+                if popup_preview_proc is None:
+                    build_msg_var.set("Preview unavailable: no audio backend")
+                    return "break"
                 self._aux_preview_procs.append(popup_preview_proc)
             except Exception:
                 popup_preview_proc = None
@@ -1162,7 +1222,15 @@ class SimpleMoozicBuilderUI(ctk.CTk):
                         stop_popup_preview()
                         popup.destroy()
                     self.after(0, done_ok)
-                except Exception as e:
+                except BaseException as e:
+                    exc_type, exc_value, exc_traceback = sys.exc_info()
+                    err_detail = str(e).strip() or e.__class__.__name__
+                    log_path = _write_crash_log(
+                        exc_type or type(e),
+                        exc_value or e,
+                        exc_traceback,
+                        context="Create Mix worker exception",
+                    )
                     def done_err():
                         pulse["active"] = False
                         progress.set(0.0)
@@ -1170,7 +1238,11 @@ class SimpleMoozicBuilderUI(ctk.CTk):
                         build_in_progress["value"] = False
                         btn_ok.configure(state="normal")
                         btn_cancel.configure(state="normal")
-                        messagebox.showerror("Mix Builder", str(e), parent=popup)
+                        messagebox.showerror(
+                            "Mix Builder",
+                            f"{err_detail}\n\nCrash log: {log_path}",
+                            parent=popup,
+                        )
                     self.after(0, done_err)
 
             threading.Thread(target=worker, daemon=True).start()
@@ -1560,10 +1632,46 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         editor.bind("<Escape>", _cancel)
         editor.bind("<FocusOut>", _commit)
 
+    def _start_audio_preview(self, audio_path: Path) -> object | None:
+        if self.preview_backend == "miniaudio" and miniaudio is not None:
+            return _MiniAudioPreviewHandle(audio_path)
+        if self.preview_ffplay is None:
+            return None
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        return subprocess.Popen(
+            [self.preview_ffplay, "-nodisp", "-autoexit", "-loglevel", "quiet", str(audio_path)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=flags,
+        )
+
+    def _stop_audio_handle(self, handle: object | None, timeout: float = 0.4) -> None:
+        if handle is None:
+            return
+        try:
+            getattr(handle, "terminate")()
+        except Exception:
+            pass
+        try:
+            getattr(handle, "wait")(timeout=timeout)
+        except Exception:
+            try:
+                getattr(handle, "kill")()
+            except Exception:
+                pass
+
+    def _active_preview_backend_name(self) -> str:
+        if self.preview_backend == "miniaudio" and miniaudio is not None:
+            return "miniaudio"
+        if self.preview_backend == "ffplay":
+            return "ffplay"
+        return "none"
+
     def start_preview_for_row(self, row_id: str) -> None:
         if not row_id:
             return
-        if self.preview_ffplay is None:
+        backend = self._active_preview_backend_name()
+        if backend == "ffplay" and self.preview_ffplay is None:
             self.status_var.set("Preview unavailable: ffplay not found")
             return
         row = next((r for r in self.track_rows if r["ogg"].name == row_id), None)
@@ -1574,26 +1682,18 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             self.status_var.set("Preview unavailable: file missing")
             return
         self.stop_preview()
-        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         try:
-            self.preview_proc = subprocess.Popen(
-                [self.preview_ffplay, "-nodisp", "-autoexit", "-loglevel", "quiet", str(audio_path)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=flags,
-            )
-            self.status_var.set(f"Previewing: {row['source'].name}")
+            self.preview_proc = self._start_audio_preview(audio_path)
+            if self.preview_proc is None:
+                self.status_var.set("Preview unavailable: no audio backend")
+                return
+            self.status_var.set(f"Previewing ({backend}): {row['source'].name}")
         except Exception as e:
             self.preview_proc = None
             self.status_var.set(f"Preview failed: {e}")
 
     def stop_preview(self) -> None:
-        if self.preview_proc is None:
-            return
-        try:
-            self.preview_proc.terminate()
-        except Exception:
-            pass
+        self._stop_audio_handle(self.preview_proc, timeout=0.4)
         self.preview_proc = None
 
     def on_tree_release(self, _event=None) -> None:
@@ -2173,6 +2273,8 @@ class SimpleMoozicBuilderUI(ctk.CTk):
 
 
 if __name__ == "__main__":
+    _enable_fatal_fault_log()
+
     def _global_excepthook(exc_type, exc_value, exc_traceback):
         _write_crash_log(exc_type, exc_value, exc_traceback, context="Global exception")
         sys.__excepthook__(exc_type, exc_value, exc_traceback)

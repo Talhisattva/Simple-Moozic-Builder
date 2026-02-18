@@ -10,6 +10,7 @@ __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
+.venv/
 
 # Build artifacts
 build/
@@ -23,6 +24,7 @@ dist/
 
 # Generated content
 OUTPUT/
+Put your audio here/
 Put your audio here/_ogg/
 Put your .ogg audio here/
 
@@ -41,3 +43,8 @@ launch_simple_moozic_builder.bat
 *.bak
 *.old
 *.orig
+*_crash.log
+*_fatal.log
+*.zip
+_tmp*/
+_tmp_*.ogg
