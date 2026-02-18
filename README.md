@@ -22,11 +22,25 @@ Output includes:
 
 - Windows
 - Python 3.12+ (for running from source, exe self contained)
-- Optional for spike testing: `miniaudio` (`pip install miniaudio`) for in-app preview backend
-- Optional for conversion spike: `soundfile` + `numpy` (`pip install soundfile numpy`) for direct OGG writing
+- Python dependencies listed in `requirements.txt`
 - Project Zomboid Build 42 setup
 - Parent mod installed if your pack depends on one (example: `\TrueMoozicTali`)
 - Leaving this blank will package all dependant assets in the output
+
+## Contributor Setup (One Command)
+
+From repo root in PowerShell:
+
+`.\setup_dev.ps1`
+
+Optional (also install ffmpeg globally via winget):
+
+`.\setup_dev.ps1 -InstallFfmpeg`
+
+Then:
+
+1. `.\.venv\Scripts\Activate.ps1`
+2. `python .\simple_moozic_builder_ui.py`
 
 ## Quick Start
 
