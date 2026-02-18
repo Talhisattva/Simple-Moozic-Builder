@@ -33,6 +33,10 @@ From repo root in PowerShell:
 
 `.\setup_dev.ps1`
 
+From repo root on Linux/macOS:
+
+`./setup_dev.sh`
+
 Optional (also install ffmpeg globally via winget):
 
 `.\setup_dev.ps1 -InstallFfmpeg`
