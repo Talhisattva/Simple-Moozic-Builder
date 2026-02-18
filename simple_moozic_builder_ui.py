@@ -158,6 +158,15 @@ class SimpleMoozicBuilderUI(ctk.CTk):
 
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
+        try:
+            # Guard against corrupted DPI/shell state that can produce absurd window/dialog sizes.
+            ctk.set_widget_scaling(1.0)
+            ctk.set_window_scaling(1.0)
+            cur_scale = float(self.tk.call("tk", "scaling"))
+            if cur_scale < 0.8 or cur_scale > 2.5:
+                self.tk.call("tk", "scaling", 1.3333333333)
+        except Exception:
+            pass
 
         self.assets_root = default_assets_root()
         self.cover_root = default_cover_root()
@@ -659,6 +668,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             defaultextension=".smbproj.json",
             filetypes=[("Moozic Builder Project", "*.smbproj.json"), ("JSON", "*.json")],
             initialdir=str(app_root()),
+            parent=self,
         )
         if not selected:
             return
@@ -669,6 +679,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             title="Load Moozic Builder Project",
             filetypes=[("Moozic Builder Project", "*.smbproj.json"), ("JSON", "*.json")],
             initialdir=str(app_root()),
+            parent=self,
         )
         if not selected:
             return
@@ -769,6 +780,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
                 ("All files", "*.*"),
             ],
             initialdir=str(self.audio_dir_active if self.audio_dir_active.exists() else audio_source_root(self.audio_dir_new)),
+            parent=self,
         )
         if not selected:
             return
@@ -868,16 +880,45 @@ class SimpleMoozicBuilderUI(ctk.CTk):
     def open_song_builder_popup(self) -> None:
         popup = ctk.CTkToplevel(self)
         popup.title("Mix Builder")
-        popup.geometry("760x620")
+        popup.minsize(620, 480)
+
+        def place_popup_normal_state() -> None:
+            width = 760
+            height = 620
+            try:
+                self.update_idletasks()
+                popup.update_idletasks()
+                parent_w = max(width, int(self.winfo_width()))
+                parent_h = max(height, int(self.winfo_height()))
+                x = int(self.winfo_rootx() + (parent_w - width) / 2)
+                y = int(self.winfo_rooty() + (parent_h - height) / 2)
+                popup.geometry(f"{width}x{height}+{x}+{y}")
+            except Exception:
+                popup.geometry("760x620")
+            # Some Windows/registry states can surface CTkToplevel as maximized/fullscreen.
+            try:
+                popup.attributes("-fullscreen", False)
+            except Exception:
+                pass
+            try:
+                popup.state("normal")
+            except Exception:
+                pass
+
+        place_popup_normal_state()
         popup.transient(self)
         popup.grab_set()
         popup.focus_set()
         self._guard_popup_default_ctk_icon_reset(popup)
         self._apply_window_icon(popup)
         popup.bind("<Map>", lambda _e: self._apply_window_icon(popup), add="+")
+        popup.bind("<Map>", lambda _e: place_popup_normal_state(), add="+")
         popup.after(0, lambda: self._apply_window_icon(popup))
+        popup.after(0, place_popup_normal_state)
         popup.after(120, lambda: self._apply_window_icon(popup))
+        popup.after(120, place_popup_normal_state)
         popup.after(400, lambda: self._apply_window_icon(popup))
+        popup.after(400, place_popup_normal_state)
 
         frame = ctk.CTkFrame(popup)
         frame.pack(fill="both", expand=True, padx=16, pady=16)
@@ -926,6 +967,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
                     ("All files", "*.*"),
                 ],
                 initialdir=str(self.audio_dir_active if self.audio_dir_active.exists() else audio_source_root(self.audio_dir_new)),
+                parent=popup,
             )
             if not selected:
                 return
@@ -1162,7 +1204,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
 
     def pick_audio_source(self) -> None:
         initial = self.audio_dir_active if self.audio_dir_active.exists() else self.audio_dir_new
-        selected = filedialog.askdirectory(title="Select audio source folder", initialdir=str(initial))
+        selected = filedialog.askdirectory(title="Select audio source folder", initialdir=str(initial), parent=self)
         if selected:
             self.audio_dir_override = Path(selected)
             self.audio_dir_active = self.audio_dir_override
@@ -1176,7 +1218,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
 
     def pick_image_source(self) -> None:
         initial = self.image_dir_active if self.image_dir_active.exists() else self.image_dir_new
-        selected = filedialog.askdirectory(title="Select image source folder", initialdir=str(initial))
+        selected = filedialog.askdirectory(title="Select image source folder", initialdir=str(initial), parent=self)
         if selected:
             self.image_dir_override = Path(selected)
             self.image_dir_active = self.image_dir_override
@@ -1194,6 +1236,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             title="Select workshop poster",
             initialdir=str(self.cover_root),
             filetypes=[("Images", "*.png;*.jpg;*.jpeg;*.webp;*.bmp")],
+            parent=self,
         )
         if selected:
             self.poster_path = Path(selected)
@@ -1404,6 +1447,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
                 title="Select B-Side audio",
                 initialdir=str(self.audio_dir_active if self.audio_dir_active.exists() else audio_source_root(self.audio_dir_new)),
                 filetypes=[("Audio", "*.ogg *.mp3 *.wav *.flac *.m4a *.aac *.wma"), ("All files", "*.*")],
+                parent=self,
             )
             if selected:
                 for key in selected_rows:
@@ -1417,6 +1461,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
                 title="Select song cover",
                 initialdir=str(self.cover_root),
                 filetypes=[("Images", "*.png;*.jpg;*.jpeg;*.webp;*.bmp")],
+                parent=self,
             )
             if selected:
                 for key in selected_rows:
@@ -2084,6 +2129,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         selected = filedialog.askdirectory(
             title="Select Zomboid Workshop Folder",
             initialdir=str(initial_base),
+            parent=self,
         )
         if not selected:
             return None
