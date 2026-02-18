@@ -10,6 +10,8 @@ import sys
 import threading
 import time
 import traceback
+import faulthandler
+import atexit
 from datetime import datetime
 from pathlib import Path
 import tkinter as tk
@@ -54,6 +56,7 @@ LAST_STATE_FILENAME = ".smb_last_state.json"
 RECENT_LIST_FILENAME = ".smb_recent.json"
 RECENT_LIMIT = 20
 CRASH_LOG_FILENAME = "simple_moozic_builder_crash.log"
+FATAL_LOG_FILENAME = "simple_moozic_builder_fatal.log"
 MAX_PREVIEW_TILES = 80
 
 KEYCODE_A = 65
@@ -68,6 +71,20 @@ def _write_crash_log(exc_type, exc_value, exc_traceback, context: str = "Unhandl
         f.write(f"\n[{stamp}] {context}\n")
         f.writelines(lines)
     return log_path
+
+
+_FAULT_HANDLER_STREAM = None
+
+
+def _enable_fatal_fault_log() -> None:
+    global _FAULT_HANDLER_STREAM
+    if _FAULT_HANDLER_STREAM is not None:
+        return
+    log_path = app_root() / FATAL_LOG_FILENAME
+    stream = log_path.open("a", encoding="utf-8")
+    _FAULT_HANDLER_STREAM = stream
+    faulthandler.enable(file=stream, all_threads=True)
+    atexit.register(stream.close)
 
 
 class _MiniAudioPreviewHandle:
@@ -1205,7 +1222,14 @@ class SimpleMoozicBuilderUI(ctk.CTk):
                         stop_popup_preview()
                         popup.destroy()
                     self.after(0, done_ok)
-                except Exception as e:
+                except BaseException as e:
+                    exc_type, exc_value, exc_traceback = sys.exc_info()
+                    log_path = _write_crash_log(
+                        exc_type or type(e),
+                        exc_value or e,
+                        exc_traceback,
+                        context="Create Mix worker exception",
+                    )
                     def done_err():
                         pulse["active"] = False
                         progress.set(0.0)
@@ -1213,7 +1237,12 @@ class SimpleMoozicBuilderUI(ctk.CTk):
                         build_in_progress["value"] = False
                         btn_ok.configure(state="normal")
                         btn_cancel.configure(state="normal")
-                        messagebox.showerror("Mix Builder", str(e), parent=popup)
+                        detail = str(e).strip() or e.__class__.__name__
+                        messagebox.showerror(
+                            "Mix Builder",
+                            f"{detail}\n\nCrash log: {log_path}",
+                            parent=popup,
+                        )
                     self.after(0, done_err)
 
             threading.Thread(target=worker, daemon=True).start()
@@ -2244,6 +2273,8 @@ class SimpleMoozicBuilderUI(ctk.CTk):
 
 
 if __name__ == "__main__":
+    _enable_fatal_fault_log()
+
     def _global_excepthook(exc_type, exc_value, exc_traceback):
         _write_crash_log(exc_type, exc_value, exc_traceback, context="Global exception")
         sys.__excepthook__(exc_type, exc_value, exc_traceback)
