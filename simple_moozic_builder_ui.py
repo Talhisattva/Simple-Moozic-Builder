@@ -191,7 +191,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         self._window_icon_images: list[tk.PhotoImage] = []
 
         self.mod_id_var = tk.StringVar(value="TM_MyPack")
-        self.parent_mod_var = tk.StringVar(value="TrueMoozicTali")
+        self.parent_mod_var = tk.StringVar(value="TrueMoozic")
         self.name_var = tk.StringVar(value="My Pack")
         self.author_var = tk.StringVar(value="")
         self.poster_add_name_var = tk.BooleanVar(value=True)
@@ -765,7 +765,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         selected = filedialog.askopenfilenames(
             title="Add Song Files",
             filetypes=[
-                ("Audio", "*.ogg;*.mp3;*.wav;*.flac;*.m4a;*.aac;*.wma"),
+                ("Audio", "*.ogg *.mp3 *.wav *.flac *.m4a *.aac *.wma"),
                 ("All files", "*.*"),
             ],
             initialdir=str(self.audio_dir_active if self.audio_dir_active.exists() else audio_source_root(self.audio_dir_new)),
@@ -799,7 +799,12 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             return
         try:
             target_str = str(target_file.resolve())
-            subprocess.Popen(["explorer.exe", "/select,", target_str])
+            if sys.platform.startswith("win"):
+                subprocess.Popen(["explorer.exe", "/select,", target_str])
+            elif sys.platform.startswith("darwin"):
+                subprocess.Popen(["open", "-R", target_str])
+            else: # Linux / Unix
+                subprocess.Popen(["xdg-open", str(target_file.parent)])
         except Exception:
             target = target_file.parent
             if target.exists():
@@ -917,7 +922,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             selected = filedialog.askopenfilenames(
                 title="Select files to stitch",
                 filetypes=[
-                    ("Audio", "*.ogg;*.mp3;*.wav;*.flac;*.m4a;*.aac;*.wma"),
+                    ("Audio", "*.ogg *.mp3 *.wav *.flac *.m4a *.aac *.wma"),
                     ("All files", "*.*"),
                 ],
                 initialdir=str(self.audio_dir_active if self.audio_dir_active.exists() else audio_source_root(self.audio_dir_new)),
@@ -1398,7 +1403,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             selected = filedialog.askopenfilename(
                 title="Select B-Side audio",
                 initialdir=str(self.audio_dir_active if self.audio_dir_active.exists() else audio_source_root(self.audio_dir_new)),
-                filetypes=[("Audio", "*.ogg;*.mp3;*.wav;*.flac;*.m4a;*.aac;*.wma"), ("All files", "*.*")],
+                filetypes=[("Audio", "*.ogg *.mp3 *.wav *.flac *.m4a *.aac *.wma"), ("All files", "*.*")],
             )
             if selected:
                 for key in selected_rows:
@@ -2005,7 +2010,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         self.last_save_path = None
 
         self.mod_id_var.set("TM_MyPack")
-        self.parent_mod_var.set("TrueMoozicTali")
+        self.parent_mod_var.set("TrueMoozic")
         self.name_var.set("My Pack")
         self.author_var.set("")
         self.poster_path = self.default_poster_path
@@ -2041,36 +2046,44 @@ class SimpleMoozicBuilderUI(ctk.CTk):
     def open_output_folder(self) -> None:
         target = self.final_output_dir or self.out_dir
         target.mkdir(parents=True, exist_ok=True)
-        os.startfile(str(target))
+        if sys.platform.startswith("win"):
+            os.startfile(str(target))
+        elif sys.platform.startswith("darwin"):
+            subprocess.Popen(["open", str(target)])
+        else:  # Linux / Unix
+            subprocess.Popen(["xdg-open", str(target)])
 
-    def _detect_default_workshop_dir(self) -> Path:
-        candidates = []
-        user_profile = os.environ.get("USERPROFILE")
-        if user_profile:
-            candidates.append(Path(user_profile) / "Zomboid" / "Workshop")
-        candidates.append(Path.home() / "Zomboid" / "Workshop")
+    def _detect_default_workshop_dir(self) -> Path | None:
+        xdg_data = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
+        candidates = [
+            Path.home() / "Zomboid" / "Workshop",
+            xdg_data / "Zomboid" / "Workshop"
+        ]
         for c in candidates:
             if c.exists() and c.is_dir():
                 return c
-        return candidates[0] if candidates else (Path.home() / "Zomboid" / "Workshop")
+        return None
 
     def _resolve_workshop_dir(self) -> Path | None:
         if self.workshop_dir_override and self.workshop_dir_override.exists():
             return self.workshop_dir_override
         detected = self._detect_default_workshop_dir()
-        if detected.exists():
+        if detected is not None and detected.exists():
             return detected
+
+        shown = str(detected) if detected is not None else "<not found>"
 
         choose = messagebox.askyesno(
             "Workshop Folder Not Found",
-            f"Default workshop folder was not found at:\n{detected}\n\nSelect a workshop folder manually?",
+            f"Default workshop folder was not found at:\n{shown}\n\nSelect a workshop folder manually?",
             parent=self,
         )
         if not choose:
             return None
+        initial_base = detected.parent if (detected is not None and detected.parent.exists()) else Path.home()
         selected = filedialog.askdirectory(
             title="Select Zomboid Workshop Folder",
-            initialdir=str(detected.parent if detected.parent.exists() else Path.home()),
+            initialdir=str(initial_base),
         )
         if not selected:
             return None
