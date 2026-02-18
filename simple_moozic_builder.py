@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Simple True MooZic child-mod builder (MVP).
 
@@ -452,7 +452,7 @@ def write_mod_info(
         f"name={name}",
         "poster=poster.png",
         f"id={mod_id}",
-        "versionMin=42.14",
+        "versionMin=42.13",
         "icon=icon.png",
     ]
     parent = (parent_mod_id or "").strip()

@@ -48,6 +48,7 @@ LAST_STATE_FILENAME = ".smb_last_state.json"
 RECENT_LIST_FILENAME = ".smb_recent.json"
 RECENT_LIMIT = 20
 CRASH_LOG_FILENAME = "simple_moozic_builder_crash.log"
+MAX_PREVIEW_TILES = 80
 
 KEYCODE_A = 65
 KEYCODE_S = 83
@@ -177,6 +178,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         self.track_settings: dict[str, dict] = {}
         self.excluded_oggs: set[str] = set()
         self.preview_images: list[ctk.CTkImage] = []
+        self.preview_tile_overflow = False
         self.poster_thumb_top: ctk.CTkImage | None = None
         self.recent_projects: list[str] = []
         self.last_save_path: Path | None = None
@@ -1893,6 +1895,23 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         if str(self.progress_bar.cget("mode")) != "determinate":
             self.progress_bar.stop()
             self.progress_bar.configure(mode="determinate")
+        if event.total > 0:
+            self.build_progress_var.set(max(0.0, min(1.0, event.index / event.total)))
+            self.status_var.set(f"Building {event.index}/{event.total}")
+
+        if len(self.preview_images) >= MAX_PREVIEW_TILES:
+            if not self.preview_tile_overflow:
+                self.preview_tile_overflow = True
+                tile = ctk.CTkFrame(self.preview_scroll)
+                tile.pack(fill="x", padx=4, pady=4)
+                ctk.CTkLabel(
+                    tile,
+                    text=f"Preview limited to first {MAX_PREVIEW_TILES} songs for stability.",
+                    anchor="w",
+                ).pack(side="left", fill="x", expand=True, padx=6, pady=6)
+            self.update_idletasks()
+            return
+
         tile = ctk.CTkFrame(self.preview_scroll)
         tile.pack(fill="x", padx=4, pady=4)
 
@@ -1912,7 +1931,8 @@ class SimpleMoozicBuilderUI(ctk.CTk):
 
         if thumb and thumb.exists():
             try:
-                im = Image.open(thumb).convert("RGBA")
+                with Image.open(thumb) as raw_im:
+                    im = raw_im.convert("RGBA")
                 im.thumbnail((84, 84))
                 photo = ctk.CTkImage(light_image=im, dark_image=im, size=im.size)
                 self.preview_images.append(photo)
@@ -1928,9 +1948,6 @@ class SimpleMoozicBuilderUI(ctk.CTk):
 
         ctk.CTkLabel(tile, text=title, anchor="w").pack(side="left", fill="x", expand=True, padx=4)
 
-        if event.total > 0:
-            self.build_progress_var.set(max(0.0, min(1.0, event.index / event.total)))
-            self.status_var.set(f"Building {event.index}/{event.total}")
         self.update_idletasks()
 
     def build_pack(self) -> None:
@@ -1944,6 +1961,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         for child in self.preview_scroll.winfo_children():
             child.destroy()
         self.preview_images.clear()
+        self.preview_tile_overflow = False
         self.progress_bar.configure(mode="indeterminate")
         self.progress_bar.start()
         self.build_progress_var.set(0)
@@ -1951,6 +1969,12 @@ class SimpleMoozicBuilderUI(ctk.CTk):
 
         try:
             out = build_mixed_from_config(self._build_config(), on_track=self._add_preview_tile)
+        except SystemExit as e:
+            self.progress_bar.stop()
+            self.progress_bar.configure(mode="determinate")
+            messagebox.showerror("Build Error", str(e) or "Build stopped")
+            self.status_var.set("Build failed")
+            return
         except Exception as e:
             self.progress_bar.stop()
             self.progress_bar.configure(mode="determinate")
