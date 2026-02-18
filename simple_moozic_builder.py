@@ -555,18 +555,28 @@ def bundle_standalone_redundancy(paths: dict[str, Path], assets_root: Path) -> N
             )
 
 
-def write_workshop(root: Path, name: str) -> None:
-    content = "\n".join(
+def write_workshop(root: Path, name: str, songs: Optional[list[str]] = None) -> None:
+    lines = [
+        "version=1",
+        "id=",
+        f"title={name}",
+        "description=[i] Generated with Simple Moozic builder [/i]",
+        f"description=[h2]{name}[/h2]",
+    ]
+    if songs:
+        lines.append("description=[h3]Song List[/h3]")
+        for song in songs:
+            song_name = (song or "").strip()
+            if song_name:
+                lines.append(f"description={song_name}")
+    lines.extend(
         [
-            "version=1",
-            "id=",
-            f"title={name}",
-            f"description=Generated music pack: {name}",
-            "tags=Build 42;Multiplayer;Music",
+            "tags=Build 42;Multiplayer;Music;Simple Moozic Builder",
             "visibility=unlisted",
             "",
         ]
     )
+    content = "\n".join(lines)
     write(root / "workshop.txt", content)
 
 
@@ -1246,7 +1256,7 @@ def build_cassette(args, on_track: Optional[Callable[[BuildTrackEvent], None]] =
         getattr(args, "parent_mod_id", "TrueMoozic"),
         getattr(args, "author", "local-builder"),
     )
-    write_workshop(paths["root"], args.name)
+    write_workshop(paths["root"], args.name, [display_name_from_file(p) for p in oggs])
     write_workshop_images(
         paths,
         args.workshop_cover,
@@ -1498,7 +1508,7 @@ def build_vinyl(args, on_track: Optional[Callable[[BuildTrackEvent], None]] = No
         getattr(args, "parent_mod_id", "TrueMoozic"),
         getattr(args, "author", "local-builder"),
     )
-    write_workshop(paths["root"], args.name)
+    write_workshop(paths["root"], args.name, [display_name_from_file(p) for p in oggs])
     write_workshop_images(
         paths,
         args.workshop_cover,
