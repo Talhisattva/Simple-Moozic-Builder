@@ -1631,10 +1631,18 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             except Exception:
                 pass
 
+    def _active_preview_backend_name(self) -> str:
+        if self.preview_backend == "miniaudio" and miniaudio is not None:
+            return "miniaudio"
+        if self.preview_backend == "ffplay":
+            return "ffplay"
+        return "none"
+
     def start_preview_for_row(self, row_id: str) -> None:
         if not row_id:
             return
-        if self.preview_backend == "ffplay" and self.preview_ffplay is None:
+        backend = self._active_preview_backend_name()
+        if backend == "ffplay" and self.preview_ffplay is None:
             self.status_var.set("Preview unavailable: ffplay not found")
             return
         row = next((r for r in self.track_rows if r["ogg"].name == row_id), None)
@@ -1650,7 +1658,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             if self.preview_proc is None:
                 self.status_var.set("Preview unavailable: no audio backend")
                 return
-            self.status_var.set(f"Previewing: {row['source'].name}")
+            self.status_var.set(f"Previewing ({backend}): {row['source'].name}")
         except Exception as e:
             self.preview_proc = None
             self.status_var.set(f"Preview failed: {e}")
