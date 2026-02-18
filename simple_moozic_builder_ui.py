@@ -295,7 +295,6 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         self._load_recent_projects()
         self._build_layout()
         self._apply_window_icon(self)
-        self.bind("<Map>", lambda _e: self._apply_window_icon(self), add="+")
         self._update_top_poster_preview(self.poster_path)
         self.name_var.trace_add("write", lambda *_: self._update_top_poster_preview(self.poster_path))
         self._bind_shortcuts()
@@ -982,16 +981,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         popup.transient(self)
         popup.grab_set()
         popup.focus_set()
-        self._guard_popup_default_ctk_icon_reset(popup)
         self._apply_window_icon(popup)
-        popup.bind("<Map>", lambda _e: self._apply_window_icon(popup), add="+")
-        popup.bind("<Map>", lambda _e: place_popup_normal_state(), add="+")
-        popup.after(0, lambda: self._apply_window_icon(popup))
-        popup.after(0, place_popup_normal_state)
-        popup.after(120, lambda: self._apply_window_icon(popup))
-        popup.after(120, place_popup_normal_state)
-        popup.after(400, lambda: self._apply_window_icon(popup))
-        popup.after(400, place_popup_normal_state)
 
         frame = ctk.CTkFrame(popup)
         frame.pack(fill="both", expand=True, padx=16, pady=16)
@@ -1771,27 +1761,27 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             pass
 
     def _apply_window_icon(self, window: tk.Misc) -> None:
+        if getattr(window, "_smb_icon_applied", False):
+            return
         base_dir = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
         icon_ico = base_dir / "icon.ico"
         if icon_ico.exists():
             try:
                 window.iconbitmap(default=str(icon_ico))
+                setattr(window, "_smb_icon_applied", True)
             except Exception:
                 pass
-        if not self._window_icon_images:
-            if icon_ico.exists():
-                try:
-                    ico_img = Image.open(icon_ico).convert("RGBA")
-                    for size in (256, 128, 64, 48, 40, 32, 24, 20, 16):
-                        im = ico_img.resize((size, size), Image.LANCZOS)
-                        self._window_icon_images.append(ImageTk.PhotoImage(im))
-                except Exception:
-                    pass
-            if self._window_icon_images:
-                self._window_icon_image = self._window_icon_images[-1]
-        if self._window_icon_images:
+        # Apply iconphoto only once to the main window for sharper taskbar rendering.
+        # Avoiding repeated/popup iconphoto calls prevents native Tk instability.
+        if window is self and not self._window_icon_images and icon_ico.exists():
             try:
-                window.iconphoto(True, *self._window_icon_images)
+                ico_img = Image.open(icon_ico).convert("RGBA")
+                for size in (256, 128, 64, 48, 40, 32, 24, 20, 16):
+                    im = ico_img.resize((size, size), Image.LANCZOS)
+                    self._window_icon_images.append(ImageTk.PhotoImage(im))
+                if self._window_icon_images:
+                    self._window_icon_image = self._window_icon_images[0]
+                    self.iconphoto(True, *self._window_icon_images)
             except Exception:
                 pass
 
