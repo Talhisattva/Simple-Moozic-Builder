@@ -421,14 +421,16 @@ def build_mod_layout(out_dir: Path, mod_id: str) -> dict[str, Path]:
     mod_base = root / "Contents" / "mods" / mod_id
     v42 = mod_base / "42"
     media = v42 / "media"
+    common = mod_base / "common"
 
     paths = {
         "root": root,
         "mod_base": mod_base,
+        "common": common,
         "v42": v42,
         "media": media,
         "scripts": ensure(media / "scripts"),
-        "sound": ensure(media / "sound" / mod_id),
+        "sound": ensure(common / "media" / "sound" / mod_id),
         "models": ensure(media / "models_X" / "WorldItems"),
         "textures": ensure(media / "textures"),
         "wtextures": ensure(media / "textures" / "WorldItems"),
@@ -436,7 +438,6 @@ def build_mod_layout(out_dir: Path, mod_id: str) -> dict[str, Path]:
         "lua_server_items": ensure(media / "lua" / "server" / "Items"),
         "hr": ensure(media / "textures" / "HR"),
     }
-    ensure(mod_base / "common")
     return paths
 
 
