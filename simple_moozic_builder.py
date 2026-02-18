@@ -16,6 +16,7 @@ Output structure is compatible with the True Moozic main mod contract:
 from __future__ import annotations
 
 import argparse
+import os
 import tempfile
 import random
 import re
@@ -28,6 +29,21 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFont
+
+try:  # Optional spike dependency for lighter conversion/write path.
+    import numpy as np  # type: ignore
+except Exception:
+    np = None
+
+try:  # Optional spike dependency for direct OGG writing.
+    import soundfile as sf  # type: ignore
+except Exception:
+    sf = None
+
+try:  # Optional decoder used to normalize mixed input sources.
+    import miniaudio  # type: ignore
+except Exception:
+    miniaudio = None
 
 
 CASSETTE_TILE = "tsarcraft_music_01_62"
@@ -623,6 +639,89 @@ def locate_ffplay() -> Optional[str]:
     return shutil.which("ffplay")
 
 
+def _audio_backend_mode() -> str:
+    mode = (os.environ.get("SMB_AUDIO_BACKEND", "auto") or "auto").strip().lower()
+    if mode in ("soundfile", "ffmpeg"):
+        return mode
+    return "auto"
+
+
+def _soundfile_backend_ready() -> bool:
+    return sf is not None and np is not None
+
+
+def _resample_pcm16(data: "np.ndarray", src_rate: int, dst_rate: int) -> "np.ndarray":
+    if src_rate == dst_rate:
+        return data
+    if data.size == 0:
+        return data
+    frames = data.shape[0]
+    channels = data.shape[1]
+    out_frames = max(1, int(round(frames * (dst_rate / src_rate))))
+    x_old = np.linspace(0.0, 1.0, num=frames, endpoint=False)
+    x_new = np.linspace(0.0, 1.0, num=out_frames, endpoint=False)
+    out = np.empty((out_frames, channels), dtype=np.float32)
+    for c in range(channels):
+        out[:, c] = np.interp(x_new, x_old, data[:, c].astype(np.float32))
+    return np.clip(out, -32768, 32767).astype(np.int16)
+
+
+def _decode_to_pcm16(source: Path, target_rate: int = 44100, target_channels: int = 2) -> tuple["np.ndarray", int]:
+    if np is None:
+        raise SystemExit("numpy is required for the soundfile conversion spike backend.")
+    if miniaudio is not None:
+        decoded = miniaudio.decode_file(
+            str(source),
+            output_format=miniaudio.SampleFormat.SIGNED16,
+            nchannels=target_channels,
+            sample_rate=target_rate,
+        )
+        arr = np.frombuffer(decoded.samples, dtype=np.int16)
+        if target_channels > 1:
+            arr = arr.reshape(-1, target_channels)
+        else:
+            arr = arr.reshape(-1, 1)
+        return arr, target_rate
+
+    if sf is None:
+        raise SystemExit("No decode backend available (miniaudio/soundfile missing).")
+
+    data, sr = sf.read(str(source), dtype="int16", always_2d=True)
+    if data.shape[1] != target_channels:
+        if data.shape[1] == 1 and target_channels == 2:
+            data = np.repeat(data, 2, axis=1)
+        elif data.shape[1] >= 2 and target_channels == 1:
+            data = np.mean(data[:, :2], axis=1, keepdims=True).astype(np.int16)
+        else:
+            data = data[:, :target_channels]
+            if data.shape[1] < target_channels:
+                pad = np.zeros((data.shape[0], target_channels - data.shape[1]), dtype=np.int16)
+                data = np.concatenate([data, pad], axis=1)
+    if sr != target_rate:
+        data = _resample_pcm16(data, sr, target_rate)
+    return data.astype(np.int16), target_rate
+
+
+def _convert_with_soundfile(source: Path, target: Path) -> None:
+    if not _soundfile_backend_ready():
+        raise SystemExit("soundfile backend unavailable (requires soundfile + numpy).")
+    pcm, sr = _decode_to_pcm16(source, target_rate=44100, target_channels=2)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    sf.write(str(target), pcm, sr, format="OGG", subtype="VORBIS")
+
+
+def _create_mix_with_soundfile(source_files: list[Path], out_path: Path) -> None:
+    if not _soundfile_backend_ready():
+        raise SystemExit("soundfile backend unavailable (requires soundfile + numpy).")
+    chunks: list["np.ndarray"] = []
+    for src in source_files:
+        pcm, _ = _decode_to_pcm16(src, target_rate=44100, target_channels=2)
+        chunks.append(pcm)
+    merged = np.concatenate(chunks, axis=0) if chunks else np.zeros((0, 2), dtype=np.int16)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    sf.write(str(out_path), merged, 44100, format="OGG", subtype="VORBIS")
+
+
 def _candidate_binary_paths(binary_name: str) -> list[Path]:
     roots = []
     seen: set[str] = set()
@@ -739,6 +838,8 @@ def convert_audio_library(
 ) -> dict[str, int]:
     src_root, cache_root = ensure_audio_workspace(audio_dir)
     sources = _collect_audio_sources(src_root)
+    backend_mode = _audio_backend_mode()
+    prefer_soundfile = backend_mode != "ffmpeg"
     ffmpeg = _locate_ffmpeg()
 
     summary = {
@@ -768,38 +869,55 @@ def convert_audio_library(
                 progress_cb(entry)
             continue
 
-        if not ffmpeg:
-            raise SystemExit(
-                "ffmpeg is required for non-OGG conversion but was not found in PATH. "
-                "Install ffmpeg and ensure `ffmpeg` is available in your terminal."
-            )
+        converted = False
+        if prefer_soundfile and _soundfile_backend_ready():
+            try:
+                _convert_with_soundfile(src, target)
+                converted = True
+                detail = "converted (soundfile)"
+            except Exception as e:
+                if backend_mode == "soundfile":
+                    raise SystemExit(f"soundfile conversion failed for {src.name}: {e}")
 
-        cmd = [
-            ffmpeg,
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-y",
-            "-i",
-            str(src),
-            "-vn",
-            "-c:a",
-            "libvorbis",
-            "-q:a",
-            "5",
-            str(target),
-        ]
-        completed = subprocess.run(cmd, capture_output=True, text=True)
-        if completed.returncode != 0:
-            summary["failed"] += 1
-            detail = (completed.stderr or completed.stdout or "ffmpeg failed").strip()
-            entry = AudioTrackEntry(source=src, ogg=target, status="failed", detail=detail)
-            if progress_cb:
-                progress_cb(entry)
-            continue
+        if not converted:
+            if not ffmpeg:
+                if prefer_soundfile and not _soundfile_backend_ready():
+                    raise SystemExit(
+                        "soundfile backend unavailable (needs soundfile + numpy) and ffmpeg was not found. "
+                        "Install dependencies or set SMB_AUDIO_BACKEND=ffmpeg with ffmpeg available."
+                    )
+                raise SystemExit(
+                    "ffmpeg is required for non-OGG conversion but was not found in PATH. "
+                    "Install ffmpeg and ensure `ffmpeg` is available in your terminal."
+                )
+
+            cmd = [
+                ffmpeg,
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                str(src),
+                "-vn",
+                "-c:a",
+                "libvorbis",
+                "-q:a",
+                "5",
+                str(target),
+            ]
+            completed = subprocess.run(cmd, capture_output=True, text=True)
+            if completed.returncode != 0:
+                summary["failed"] += 1
+                detail_err = (completed.stderr or completed.stdout or "ffmpeg failed").strip()
+                entry = AudioTrackEntry(source=src, ogg=target, status="failed", detail=detail_err)
+                if progress_cb:
+                    progress_cb(entry)
+                continue
+            detail = "converted (ffmpeg)"
 
         summary["converted"] += 1
-        entry = AudioTrackEntry(source=src, ogg=target, status="ready", detail="converted")
+        entry = AudioTrackEntry(source=src, ogg=target, status="ready", detail=detail)
         if progress_cb:
             progress_cb(entry)
 
@@ -814,8 +932,10 @@ def create_song_from_sources(
 ) -> Path:
     if not source_files:
         raise SystemExit("No source files were provided to create the song.")
+    backend_mode = _audio_backend_mode()
+    prefer_soundfile = backend_mode != "ffmpeg"
     ffmpeg = _locate_ffmpeg()
-    if not ffmpeg:
+    if backend_mode == "ffmpeg" and not ffmpeg:
         raise SystemExit("ffmpeg was not found; cannot create a stitched song.")
 
     resolved_sources: list[Path] = []
@@ -838,29 +958,46 @@ def create_song_from_sources(
     elif out_path.exists():
         out_path.unlink()
 
-    cmd: list[str] = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y"]
-    for src in resolved_sources:
-        cmd.extend(["-i", str(src)])
-    concat_inputs = "".join(f"[{idx}:a]" for idx in range(len(resolved_sources)))
-    filter_graph = f"{concat_inputs}concat=n={len(resolved_sources)}:v=0:a=1[outa]"
-    cmd.extend(
-        [
-            "-filter_complex",
-            filter_graph,
-            "-map",
-            "[outa]",
-            "-vn",
-            "-c:a",
-            "libvorbis",
-            "-q:a",
-            "5",
-            str(out_path),
-        ]
-    )
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        err = (result.stderr or result.stdout or "ffmpeg failed").strip()
-        raise SystemExit(f"ffmpeg failed creating song: {err}")
+    created = False
+    if prefer_soundfile and _soundfile_backend_ready():
+        try:
+            _create_mix_with_soundfile(resolved_sources, out_path)
+            created = True
+        except Exception as e:
+            if backend_mode == "soundfile":
+                raise SystemExit(f"soundfile failed creating song: {e}")
+
+    if not created:
+        if not ffmpeg:
+            if prefer_soundfile and not _soundfile_backend_ready():
+                raise SystemExit(
+                    "soundfile backend unavailable (needs soundfile + numpy) and ffmpeg was not found; "
+                    "cannot create stitched song."
+                )
+            raise SystemExit("ffmpeg was not found; cannot create a stitched song.")
+        cmd: list[str] = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y"]
+        for src in resolved_sources:
+            cmd.extend(["-i", str(src)])
+        concat_inputs = "".join(f"[{idx}:a]" for idx in range(len(resolved_sources)))
+        filter_graph = f"{concat_inputs}concat=n={len(resolved_sources)}:v=0:a=1[outa]"
+        cmd.extend(
+            [
+                "-filter_complex",
+                filter_graph,
+                "-map",
+                "[outa]",
+                "-vn",
+                "-c:a",
+                "libvorbis",
+                "-q:a",
+                "5",
+                str(out_path),
+            ]
+        )
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            err = (result.stderr or result.stdout or "ffmpeg failed").strip()
+            raise SystemExit(f"ffmpeg failed creating song: {err}")
 
     cache_out = cache_root / out_path.name
     try:
@@ -876,6 +1013,8 @@ def convert_single_audio_file(source_file: Path, audio_dir: Path, force: bool = 
     if not src.exists() or not src.is_file():
         raise SystemExit(f"Source file not found: {src}")
 
+    backend_mode = _audio_backend_mode()
+    prefer_soundfile = backend_mode != "ffmpeg"
     ffmpeg = _locate_ffmpeg()
     target = cache_root / f"{src.stem}.ogg"
     up_to_date = target.exists() and target.stat().st_mtime >= src.stat().st_mtime
@@ -887,7 +1026,19 @@ def convert_single_audio_file(source_file: Path, audio_dir: Path, force: bool = 
             shutil.copy2(src, target)
         return AudioTrackEntry(source=src, ogg=target, status="ready", detail="copied")
 
+    if prefer_soundfile and _soundfile_backend_ready():
+        try:
+            _convert_with_soundfile(src, target)
+            return AudioTrackEntry(source=src, ogg=target, status="ready", detail="converted (soundfile)")
+        except Exception as e:
+            if backend_mode == "soundfile":
+                raise SystemExit(f"soundfile conversion failed: {e}")
+
     if not ffmpeg:
+        if prefer_soundfile and not _soundfile_backend_ready():
+            raise SystemExit(
+                "soundfile backend unavailable (needs soundfile + numpy) and ffmpeg was not found."
+            )
         raise SystemExit("ffmpeg is required for non-OGG conversion but was not found.")
 
     cmd = [
@@ -909,7 +1060,7 @@ def convert_single_audio_file(source_file: Path, audio_dir: Path, force: bool = 
     if completed.returncode != 0:
         detail = (completed.stderr or completed.stdout or "ffmpeg failed").strip()
         raise SystemExit(f"ffmpeg conversion failed: {detail}")
-    return AudioTrackEntry(source=src, ogg=target, status="ready", detail="converted")
+    return AudioTrackEntry(source=src, ogg=target, status="ready", detail="converted (ffmpeg)")
 
 
 def rename_song_asset(

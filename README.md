@@ -23,6 +23,7 @@ Output includes:
 - Windows
 - Python 3.12+ (for running from source, exe self contained)
 - Optional for spike testing: `miniaudio` (`pip install miniaudio`) for in-app preview backend
+- Optional for conversion spike: `soundfile` + `numpy` (`pip install soundfile numpy`) for direct OGG writing
 - Project Zomboid Build 42 setup
 - Parent mod installed if your pack depends on one (example: `\TrueMoozicTali`)
 - Leaving this blank will package all dependant assets in the output
@@ -74,6 +75,10 @@ Build process generates a ready-to-publish mod folder structure and can copy out
 - End-to-end music-pack generation
 - Built-in ffmpeg conversion pipeline
 - Experimental preview backend switch (miniaudio when installed, ffplay fallback)
+- Experimental conversion backend switch via env var:
+  - `SMB_AUDIO_BACKEND=auto` (default: prefer soundfile if installed, fallback ffmpeg)
+  - `SMB_AUDIO_BACKEND=soundfile` (force soundfile path)
+  - `SMB_AUDIO_BACKEND=ffmpeg` (force ffmpeg path)
 - A-side / B-side media support - New Flip Feature in base mod
 - Batch operations for cassette/vinyl toggles
 - Save/load project state and recent files
