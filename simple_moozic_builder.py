@@ -650,6 +650,22 @@ def _soundfile_backend_ready() -> bool:
     return sf is not None and np is not None
 
 
+def _audio_trace_enabled() -> bool:
+    return (os.environ.get("SMB_TRACE_AUDIO", "") or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _audio_trace(msg: str) -> None:
+    if not _audio_trace_enabled():
+        return
+    try:
+        p = app_root() / "simple_moozic_builder_audio_trace.log"
+        stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with p.open("a", encoding="utf-8") as f:
+            f.write(f"[{stamp}] {msg}\n")
+    except Exception:
+        pass
+
+
 def _resample_pcm16(data: "np.ndarray", src_rate: int, dst_rate: int) -> "np.ndarray":
     if src_rate == dst_rate:
         return data
@@ -669,24 +685,34 @@ def _resample_pcm16(data: "np.ndarray", src_rate: int, dst_rate: int) -> "np.nda
 def _decode_to_pcm16(source: Path, target_rate: int = 44100, target_channels: int = 2) -> tuple["np.ndarray", int]:
     if np is None:
         raise SystemExit("numpy is required for the soundfile conversion spike backend.")
-    if miniaudio is not None:
+    decode_err: Exception | None = None
+    if sf is not None:
+        try:
+            data, sr = sf.read(str(source), dtype="int16", always_2d=True)
+        except Exception as e:
+            decode_err = e
+            data = None
+            sr = target_rate
+    else:
+        data = None
+        sr = target_rate
+    if data is None:
+        if miniaudio is None:
+            raise SystemExit(f"No decode backend available (soundfile failed: {decode_err}; miniaudio missing).")
         decoded = miniaudio.decode_file(
             str(source),
             output_format=miniaudio.SampleFormat.SIGNED16,
             nchannels=target_channels,
             sample_rate=target_rate,
         )
-        arr = np.frombuffer(decoded.samples, dtype=np.int16)
+        # Copy out of miniaudio-owned buffer so callers don't hold dangling memory.
+        arr = np.frombuffer(decoded.samples, dtype=np.int16).copy()
         if target_channels > 1:
             arr = arr.reshape(-1, target_channels)
         else:
             arr = arr.reshape(-1, 1)
-        return arr, target_rate
+        return np.ascontiguousarray(arr), target_rate
 
-    if sf is None:
-        raise SystemExit("No decode backend available (miniaudio/soundfile missing).")
-
-    data, sr = sf.read(str(source), dtype="int16", always_2d=True)
     if data.shape[1] != target_channels:
         if data.shape[1] == 1 and target_channels == 2:
             data = np.repeat(data, 2, axis=1)
@@ -707,19 +733,38 @@ def _convert_with_soundfile(source: Path, target: Path) -> None:
         raise SystemExit("soundfile backend unavailable (requires soundfile + numpy).")
     pcm, sr = _decode_to_pcm16(source, target_rate=44100, target_channels=2)
     target.parent.mkdir(parents=True, exist_ok=True)
-    sf.write(str(target), pcm, sr, format="OGG", subtype="VORBIS")
+    # Vorbis encoding is more stable via float32 input on Windows builds.
+    pcm_f32 = pcm.astype(np.float32) / 32768.0
+    sf.write(str(target), pcm_f32, sr, format="OGG", subtype="VORBIS")
 
 
 def _create_mix_with_soundfile(source_files: list[Path], out_path: Path) -> None:
     if not _soundfile_backend_ready():
         raise SystemExit("soundfile backend unavailable (requires soundfile + numpy).")
-    chunks: list["np.ndarray"] = []
-    for src in source_files:
-        pcm, _ = _decode_to_pcm16(src, target_rate=44100, target_channels=2)
-        chunks.append(pcm)
-    merged = np.concatenate(chunks, axis=0) if chunks else np.zeros((0, 2), dtype=np.int16)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    sf.write(str(out_path), merged, 44100, format="OGG", subtype="VORBIS")
+    # Stream chunks into encoder to avoid one huge write call that can crash.
+    with sf.SoundFile(
+        str(out_path),
+        mode="w",
+        samplerate=44100,
+        channels=2,
+        format="OGG",
+        subtype="VORBIS",
+    ) as out_sf:
+        _audio_trace(f"soundfile mix start: out={out_path} sources={len(source_files)}")
+        for src in source_files:
+            _audio_trace(f"decode start: {src}")
+            pcm, _ = _decode_to_pcm16(src, target_rate=44100, target_channels=2)
+            pcm_f32 = pcm.astype(np.float32) / 32768.0
+            if pcm_f32.shape[0] == 0:
+                _audio_trace(f"skip empty: {src}")
+                continue
+            frame_step = 16384
+            _audio_trace(f"write start: {src} frames={pcm_f32.shape[0]}")
+            for i in range(0, pcm_f32.shape[0], frame_step):
+                out_sf.write(pcm_f32[i : i + frame_step])
+            _audio_trace(f"write done: {src}")
+        _audio_trace(f"soundfile mix done: out={out_path}")
 
 
 def _candidate_binary_paths(binary_name: str) -> list[Path]:
@@ -934,8 +979,6 @@ def create_song_from_sources(
         raise SystemExit("No source files were provided to create the song.")
     backend_mode = _audio_backend_mode()
     prefer_soundfile = backend_mode != "ffmpeg"
-    # Mixing via soundfile is still experimental; keep off unless explicitly enabled.
-    allow_soundfile_mix = (os.environ.get("SMB_SOUNDFILE_MIX", "") or "").strip().lower() in ("1", "true", "yes", "on")
     ffmpeg = _locate_ffmpeg()
     if backend_mode == "ffmpeg" and not ffmpeg:
         raise SystemExit("ffmpeg was not found; cannot create a stitched song.")
@@ -961,22 +1004,31 @@ def create_song_from_sources(
         out_path.unlink()
 
     created = False
-    if prefer_soundfile and allow_soundfile_mix and _soundfile_backend_ready():
+    soundfile_ready = _soundfile_backend_ready()
+    soundfile_err: Exception | None = None
+    if prefer_soundfile and soundfile_ready:
         try:
             _create_mix_with_soundfile(resolved_sources, out_path)
             created = True
         except Exception as e:
+            soundfile_err = e
             if backend_mode == "soundfile":
                 raise SystemExit(f"soundfile failed creating song: {e}")
+    elif backend_mode == "soundfile":
+        raise SystemExit("soundfile backend unavailable (needs soundfile + numpy); cannot create stitched song.")
 
     if not created:
         if not ffmpeg:
-            if prefer_soundfile and not _soundfile_backend_ready():
+            if prefer_soundfile and not soundfile_ready:
                 raise SystemExit(
                     "soundfile backend unavailable (needs soundfile + numpy) and ffmpeg was not found; "
                     "cannot create stitched song."
                 )
-            raise SystemExit("ffmpeg was not found; cannot create a stitched song.")
+            if soundfile_err is not None:
+                raise SystemExit(f"soundfile failed creating song: {soundfile_err}; ffmpeg fallback was not found.")
+            raise SystemExit(
+                "ffmpeg was not found; cannot create a stitched song."
+            )
         cmd: list[str] = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y"]
         for src in resolved_sources:
             cmd.extend(["-i", str(src)])

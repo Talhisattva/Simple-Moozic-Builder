@@ -79,8 +79,10 @@ Build process generates a ready-to-publish mod folder structure and can copy out
   - `SMB_AUDIO_BACKEND=auto` (default: prefer soundfile if installed, fallback ffmpeg)
   - `SMB_AUDIO_BACKEND=soundfile` (force soundfile path)
   - `SMB_AUDIO_BACKEND=ffmpeg` (force ffmpeg path)
-- Mix/stitch creation currently stays on ffmpeg by default for stability.
-  - Optional experimental override: `SMB_SOUNDFILE_MIX=1`
+- Mix/stitch creation follows the same backend policy:
+  - `auto`: try soundfile first, fallback to ffmpeg
+  - `soundfile`: soundfile only (fail fast if unavailable)
+  - `ffmpeg`: ffmpeg only
 - A-side / B-side media support - New Flip Feature in base mod
 - Batch operations for cassette/vinyl toggles
 - Save/load project state and recent files

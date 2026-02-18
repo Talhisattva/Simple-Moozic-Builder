@@ -1224,6 +1224,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
                     self.after(0, done_ok)
                 except BaseException as e:
                     exc_type, exc_value, exc_traceback = sys.exc_info()
+                    err_detail = str(e).strip() or e.__class__.__name__
                     log_path = _write_crash_log(
                         exc_type or type(e),
                         exc_value or e,
@@ -1237,10 +1238,9 @@ class SimpleMoozicBuilderUI(ctk.CTk):
                         build_in_progress["value"] = False
                         btn_ok.configure(state="normal")
                         btn_cancel.configure(state="normal")
-                        detail = str(e).strip() or e.__class__.__name__
                         messagebox.showerror(
                             "Mix Builder",
-                            f"{detail}\n\nCrash log: {log_path}",
+                            f"{err_detail}\n\nCrash log: {log_path}",
                             parent=popup,
                         )
                     self.after(0, done_err)
