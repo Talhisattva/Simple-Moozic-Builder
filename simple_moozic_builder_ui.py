@@ -2068,19 +2068,22 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         if self.workshop_dir_override and self.workshop_dir_override.exists():
             return self.workshop_dir_override
         detected = self._detect_default_workshop_dir()
-        if detected.exists():
+        if detected is not None and detected.exists():
             return detected
+
+        shown = str(detected) if detected is not None else "<not found>"
 
         choose = messagebox.askyesno(
             "Workshop Folder Not Found",
-            f"Default workshop folder was not found at:\n{detected}\n\nSelect a workshop folder manually?",
+            f"Default workshop folder was not found at:\n{shown}\n\nSelect a workshop folder manually?",
             parent=self,
         )
         if not choose:
             return None
+        initial_base = detected.parent if (detected is not None and detected.parent.exists()) else Path.home()
         selected = filedialog.askdirectory(
             title="Select Zomboid Workshop Folder",
-            initialdir=str(detected.parent if detected.parent.exists() else Path.home()),
+            initialdir=str(initial_base),
         )
         if not selected:
             return None
