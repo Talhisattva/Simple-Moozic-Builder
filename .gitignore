@@ -47,3 +47,4 @@ launch_simple_moozic_builder.bat
 *_fatal.log
 *.zip
 _tmp*/
+_tmp_*.ogg
