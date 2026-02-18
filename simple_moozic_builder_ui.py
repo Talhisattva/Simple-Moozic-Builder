@@ -22,7 +22,7 @@ try:
 except Exception as e:  # pragma: no cover
     raise SystemExit("CustomTkinter is required. Install with: pip install customtkinter") from e
 
-from PIL import Image
+from PIL import Image, ImageTk
 
 try:  # Optional spike dependency for preview playback.
     import miniaudio  # type: ignore
@@ -1779,14 +1779,12 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             except Exception:
                 pass
         if not self._window_icon_images:
-            icon_candidates = [
-                base_dir / "icon.png",
-            ]
-            for p in icon_candidates:
-                if not p.exists():
-                    continue
+            if icon_ico.exists():
                 try:
-                    self._window_icon_images.append(tk.PhotoImage(file=str(p)))
+                    ico_img = Image.open(icon_ico).convert("RGBA")
+                    for size in (256, 128, 64, 48, 40, 32, 24, 20, 16):
+                        im = ico_img.resize((size, size), Image.LANCZOS)
+                        self._window_icon_images.append(ImageTk.PhotoImage(im))
                 except Exception:
                     pass
             if self._window_icon_images:
