@@ -1097,14 +1097,14 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             if idx < 0 or idx >= len(song_files):
                 return "break"
             if self.preview_backend == "ffplay" and self.preview_ffplay is None:
-                build_msg_var.set("Preview unavailable: ffplay not found")
+                build_msg_var.set(self._preview_unavailable_message())
                 return "break"
             src = song_files[idx]
             stop_popup_preview()
             try:
                 popup_preview_proc = self._start_audio_preview(src)
                 if popup_preview_proc is None:
-                    build_msg_var.set("Preview unavailable: no audio backend")
+                    build_msg_var.set(self._preview_unavailable_message())
                     return "break"
                 self._aux_preview_procs.append(popup_preview_proc)
             except Exception:
@@ -1660,6 +1660,21 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             except Exception:
                 pass
 
+    def _preview_unavailable_message(self) -> str:
+        has_miniaudio = miniaudio is not None
+        has_ffplay = self.preview_ffplay is not None
+        if not has_miniaudio and not has_ffplay:
+            return "Preview unavailable: miniaudio not bundled and ffplay not found"
+        if self.preview_backend == "ffplay" and not has_ffplay:
+            return "Preview unavailable: ffplay not found"
+        if self.preview_backend == "miniaudio" and not has_miniaudio:
+            return "Preview unavailable: miniaudio not bundled"
+        if not has_miniaudio:
+            return "Preview unavailable: miniaudio not bundled"
+        if not has_ffplay:
+            return "Preview unavailable: ffplay not found"
+        return "Preview unavailable: no audio backend"
+
     def _active_preview_backend_name(self) -> str:
         if self.preview_backend == "miniaudio" and miniaudio is not None:
             return "miniaudio"
@@ -1672,7 +1687,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             return
         backend = self._active_preview_backend_name()
         if backend == "ffplay" and self.preview_ffplay is None:
-            self.status_var.set("Preview unavailable: ffplay not found")
+            self.status_var.set(self._preview_unavailable_message())
             return
         row = next((r for r in self.track_rows if r["ogg"].name == row_id), None)
         if not row:
@@ -1685,7 +1700,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         try:
             self.preview_proc = self._start_audio_preview(audio_path)
             if self.preview_proc is None:
-                self.status_var.set("Preview unavailable: no audio backend")
+                self.status_var.set(self._preview_unavailable_message())
                 return
             self.status_var.set(f"Previewing ({backend}): {row['source'].name}")
         except Exception as e:

@@ -2,7 +2,8 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$Version,
     [string]$DistRoot = ".\dist\SimpleMoozicBuilder",
-    [string]$OutDir = ".\dist"
+    [string]$OutDir = ".\dist",
+    [string]$FfmpegSource = ".\ffmpeg"
 )
 
 $ErrorActionPreference = "Stop"
@@ -31,6 +32,16 @@ Copy-Item -Path (Join-Path $DistRoot "*") -Destination $stageLite -Recurse -Forc
 $liteFfmpeg = Join-Path $stageLite "ffmpeg"
 if (Test-Path $liteFfmpeg) {
     Remove-Item $liteFfmpeg -Recurse -Force
+}
+
+if (Test-Path $FfmpegSource) {
+    $compatFfmpeg = Join-Path $stageCompat "ffmpeg"
+    if (Test-Path $compatFfmpeg) {
+        Remove-Item $compatFfmpeg -Recurse -Force
+    }
+    Copy-Item -Path $FfmpegSource -Destination $stageCompat -Recurse -Force
+} else {
+    Write-Warning "ffmpeg source folder not found: $FfmpegSource (compat build will not include ffmpeg)"
 }
 
 Compress-Archive -Path (Join-Path $stageLite "..\*") -DestinationPath $zipLite -Force
