@@ -934,6 +934,8 @@ def create_song_from_sources(
         raise SystemExit("No source files were provided to create the song.")
     backend_mode = _audio_backend_mode()
     prefer_soundfile = backend_mode != "ffmpeg"
+    # Mixing via soundfile is still experimental; keep off unless explicitly enabled.
+    allow_soundfile_mix = (os.environ.get("SMB_SOUNDFILE_MIX", "") or "").strip().lower() in ("1", "true", "yes", "on")
     ffmpeg = _locate_ffmpeg()
     if backend_mode == "ffmpeg" and not ffmpeg:
         raise SystemExit("ffmpeg was not found; cannot create a stitched song.")
@@ -959,7 +961,7 @@ def create_song_from_sources(
         out_path.unlink()
 
     created = False
-    if prefer_soundfile and _soundfile_backend_ready():
+    if prefer_soundfile and allow_soundfile_mix and _soundfile_backend_ready():
         try:
             _create_mix_with_soundfile(resolved_sources, out_path)
             created = True
