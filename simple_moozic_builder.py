@@ -487,7 +487,13 @@ def write_mod_info(
     write(v42 / "mod.info", content)
 
 
-def write_standalone_music_defs(lua_shared: Path) -> None:
+def standalone_core_defs_module_name(mod_id: str) -> str:
+    base = sanitize_id(mod_id) or "SMBStandalone"
+    return f"{base}_MusicCoreDefs"
+
+
+def write_standalone_music_defs(lua_shared: Path, mod_id: str) -> str:
+    module_name = standalone_core_defs_module_name(mod_id)
     content = "\n".join(
         [
             "if not TCMusic then TCMusic = {} end",
@@ -504,7 +510,8 @@ def write_standalone_music_defs(lua_shared: Path) -> None:
             "",
         ]
     )
-    write(lua_shared / "TCMusicDefenitions.lua", content)
+    write(lua_shared / f"{module_name}.lua", content)
+    return module_name
 
 
 def bundle_standalone_redundancy(paths: dict[str, Path], assets_root: Path) -> None:
@@ -1505,14 +1512,15 @@ def build_cassette(args, on_track: Optional[Callable[[BuildTrackEvent], None]] =
         args.name,
         add_name_overlay=bool(getattr(args, "add_name_to_poster", True)),
     )
+    standalone_defs_module = "TCMusicDefenitions"
     if bool(getattr(args, "standalone_bundle", False)):
         bundle_standalone_redundancy(paths, args.assets_root)
-        write_standalone_music_defs(paths["lua_shared"])
+        standalone_defs_module = write_standalone_music_defs(paths["lua_shared"], args.mod_id)
 
     sounds = [f"module {args.mod_id}", "{"]  # script sounds
     items = [f"module {args.mod_id}", "{", "\timports", "\t{", "\t\tBase", "\t}", ""]
     models = [f"module {args.mod_id}", "{", "\timports", "\t{", "\t\tBase", "\t}", ""]
-    musicdefs = ['require "TCMusicDefenitions"', ""]
+    musicdefs = [f'require "{standalone_defs_module}"', ""]
     cassette_assignments: list[tuple[str, int]] = []
     cover_cache: dict[Path, Image.Image] = {}
 
@@ -1761,9 +1769,10 @@ def build_vinyl(args, on_track: Optional[Callable[[BuildTrackEvent], None]] = No
         args.name,
         add_name_overlay=bool(getattr(args, "add_name_to_poster", True)),
     )
+    standalone_defs_module = "TCMusicDefenitions"
     if bool(getattr(args, "standalone_bundle", False)):
         bundle_standalone_redundancy(paths, args.assets_root)
-        write_standalone_music_defs(paths["lua_shared"])
+        standalone_defs_module = write_standalone_music_defs(paths["lua_shared"], args.mod_id)
 
     module_name = args.mod_id
     vinyl_art_placement = _parse_vinyl_art_placement(getattr(args, "vinyl_art_placement", "inside"), default="inside")
@@ -1852,7 +1861,7 @@ def build_vinyl(args, on_track: Optional[Callable[[BuildTrackEvent], None]] = No
     sounds = [f"module {module_name}", "{", "\timports", "\t{", "\t\tBase", "\t}", ""]
     items = [f"module {module_name}", "{", "\timports", "\t{", "\t\tBase", "\t}", ""]
     models = [f"module {module_name}", "{", "\timports", "\t{", "\t\tBase", "\t}", ""]
-    musicdefs = ['require "TCMusicDefenitions"', ""]
+    musicdefs = [f'require "{standalone_defs_module}"', ""]
     random_assignments: list[tuple[str, int, int]] = []
 
     song_b_sides = getattr(args, "song_b_sides", {}) or {}
