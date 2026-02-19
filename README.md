@@ -78,6 +78,10 @@ Manage tracks in one place:
 - Convert status tracking
 
 ### 3. Cover Pipeline
+<p align="center">
+  <img width="150" height="150" alt="SMBLOGO" src="https://i.imgur.com/LyCox1l.png" />&nbsp;&nbsp;
+  <img width="150" height="150" alt="SMBLOGO" src="https://i.imgur.com/tyHVIio.png" />
+</p>
 
 Supports both quick and advanced cover flows:
 - Poster override or Mod default (random base texture) for all covers
