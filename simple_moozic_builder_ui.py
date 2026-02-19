@@ -1010,6 +1010,9 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         song_files: list[Path] = []
         popup_preview_proc: object | None = None
         build_in_progress = {"value": False}
+        pulse = {"active": False}
+        phase = {"compiling": False}
+        pulse_after_id = {"id": None}
 
         def redraw_files() -> None:
             for iid in files_tree.get_children():
@@ -1132,12 +1135,25 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         files_tree.bind("<Motion>", on_popup_tree_motion)
         files_tree.bind("<Leave>", on_popup_tree_leave)
 
+        def stop_pulse() -> None:
+            pulse["active"] = False
+            job = pulse_after_id["id"]
+            pulse_after_id["id"] = None
+            if job is None:
+                return
+            try:
+                self.after_cancel(job)
+            except Exception:
+                pass
+
         def on_cancel() -> None:
+            stop_pulse()
             stop_popup_preview()
             self._hide_hover_tip()
             popup.destroy()
 
         popup.protocol("WM_DELETE_WINDOW", on_cancel)
+        popup.bind("<Destroy>", lambda _e=None: stop_pulse(), add="+")
 
         def on_ok() -> None:
             name = song_name_var.get().strip()
@@ -1170,26 +1186,32 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             btn_ok.configure(state="disabled")
             btn_cancel.configure(state="disabled")
 
-            pulse = {"active": True}
-            phase = {"compiling": False}
+            pulse["active"] = True
+            phase["compiling"] = False
 
             def pulse_progress():
                 if not pulse["active"]:
                     return
-                cur = float(progress.get())
-                if cur < 0.88:
-                    nxt = min(0.88, cur + 0.025)
-                elif cur < 0.96:
-                    if not phase["compiling"]:
-                        build_msg_var.set("Compiling mix (please wait)...")
-                        phase["compiling"] = True
-                    nxt = min(0.96, cur + 0.006)
-                elif cur < 0.985:
-                    nxt = min(0.985, cur + 0.0015)
-                else:
-                    nxt = cur
-                progress.set(nxt)
-                popup.after(160, pulse_progress)
+                try:
+                    if not popup.winfo_exists():
+                        stop_pulse()
+                        return
+                    cur = float(progress.get())
+                    if cur < 0.88:
+                        nxt = min(0.88, cur + 0.025)
+                    elif cur < 0.96:
+                        if not phase["compiling"]:
+                            build_msg_var.set("Compiling mix (please wait)...")
+                            phase["compiling"] = True
+                        nxt = min(0.96, cur + 0.006)
+                    elif cur < 0.985:
+                        nxt = min(0.985, cur + 0.0015)
+                    else:
+                        nxt = cur
+                    progress.set(nxt)
+                    pulse_after_id["id"] = self.after(160, pulse_progress)
+                except Exception:
+                    stop_pulse()
 
             pulse_progress()
 
@@ -1202,7 +1224,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
                         overwrite_existing=overwrite_existing,
                     )
                     def done_ok():
-                        pulse["active"] = False
+                        stop_pulse()
                         progress.set(1.0)
                         self.excluded_oggs.discard(out_file.name)
                         self.refresh_songs()
@@ -1222,7 +1244,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
                         context="Create Mix worker exception",
                     )
                     def done_err():
-                        pulse["active"] = False
+                        stop_pulse()
                         progress.set(0.0)
                         build_msg_var.set("")
                         build_in_progress["value"] = False
