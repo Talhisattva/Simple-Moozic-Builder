@@ -54,8 +54,10 @@ VINYL_RECORD_VARIANT_MIN = 1
 VINYL_RECORD_VARIANT_MAX = 5
 VINYL_ALBUM_VARIANT_MIN = 1
 VINYL_ALBUM_VARIANT_MAX = 12
-AUDIO_FOLDER_NAME = "Put your audio here"
-AUDIO_CACHE_FOLDER_NAME = "_ogg"
+AUDIO_FOLDER_NAME = "Audio Library"
+AUDIO_CACHE_FOLDER_NAME = "Conversions"
+LEGACY_AUDIO_FOLDER_NAME = "Put your audio here"
+LEGACY_AUDIO_CACHE_FOLDER_NAME = "_ogg"
 AUDIO_SOURCE_EXTENSIONS = {
     ".ogg",
     ".mp3",
@@ -96,7 +98,13 @@ def bundled_resource_root() -> Path:
 def bootstrap_runtime_folders(base_dir: Optional[Path] = None) -> dict[str, Path]:
     root = (base_dir or app_root()).resolve()
     audio = ensure(root / AUDIO_FOLDER_NAME)
+    legacy_audio = root / LEGACY_AUDIO_FOLDER_NAME
+    if (not any(audio.iterdir())) and legacy_audio.exists() and legacy_audio.is_dir():
+        audio = legacy_audio
     audio_cache = ensure(audio / AUDIO_CACHE_FOLDER_NAME)
+    legacy_cache = audio / LEGACY_AUDIO_CACHE_FOLDER_NAME
+    if (not any(audio_cache.iterdir())) and legacy_cache.exists() and legacy_cache.is_dir():
+        audio_cache = legacy_cache
     images = ensure(root / "Put your images here")
     output = ensure(root / "OUTPUT")
     return {
@@ -626,11 +634,19 @@ def workshop_song_lines(oggs: list[Path], song_b_sides: Optional[dict[str, Path 
 
 
 def audio_source_root(audio_dir: Path) -> Path:
-    return audio_dir.parent if audio_dir.name == AUDIO_CACHE_FOLDER_NAME else audio_dir
+    if audio_dir.name in (AUDIO_CACHE_FOLDER_NAME, LEGACY_AUDIO_CACHE_FOLDER_NAME):
+        return audio_dir.parent
+    return audio_dir
 
 
 def audio_cache_root(audio_dir: Path) -> Path:
-    return audio_dir if audio_dir.name == AUDIO_CACHE_FOLDER_NAME else (audio_dir / AUDIO_CACHE_FOLDER_NAME)
+    if audio_dir.name in (AUDIO_CACHE_FOLDER_NAME, LEGACY_AUDIO_CACHE_FOLDER_NAME):
+        return audio_dir
+    preferred = audio_dir / AUDIO_CACHE_FOLDER_NAME
+    legacy = audio_dir / LEGACY_AUDIO_CACHE_FOLDER_NAME
+    if legacy.exists() and legacy.is_dir() and not preferred.exists():
+        return legacy
+    return preferred
 
 
 def ensure_audio_workspace(audio_dir: Path) -> tuple[Path, Path]:
@@ -865,7 +881,7 @@ def refresh_song_catalog(audio_dir: Path) -> list[AudioTrackEntry]:
                 detail = "source newer"
         raw_entries.append(AudioTrackEntry(source=src, ogg=target, status=status, detail=detail))
 
-    # Include cache-only OGGs (keeps CLI usable when users only drop OGG into _ogg).
+    # Include cache-only OGGs (keeps CLI usable when users only drop OGG into Conversions).
     for ogg in sorted([p for p in cache_root.iterdir() if p.is_file() and p.suffix.lower() == ".ogg"]):
         resolved = ogg.resolve()
         if resolved in seen_oggs:
@@ -2133,7 +2149,12 @@ def default_assets_root() -> Path:
 
 
 def default_audio_root() -> Path:
-    return app_root() / AUDIO_FOLDER_NAME
+    root = app_root()
+    preferred = root / AUDIO_FOLDER_NAME
+    legacy = root / LEGACY_AUDIO_FOLDER_NAME
+    if legacy.exists() and legacy.is_dir() and not preferred.exists():
+        return legacy
+    return preferred
 
 
 def default_output_root() -> Path:
@@ -2195,6 +2216,26 @@ def build_mixed_from_config(config: dict, on_track: Optional[Callable[[BuildTrac
 
     for ogg_name, mode_cfg in track_modes.items():
         ogg_path = ogg_by_name.get(ogg_name)
+        if ogg_path is None:
+            source_override = mode_cfg.get("source_path")
+            if source_override:
+                src = Path(source_override)
+                if src.exists() and src.is_file():
+                    if src.suffix.lower() == ".ogg":
+                        ogg_path = src
+                    else:
+                        try:
+                            converted = convert_single_audio_file(src, base_audio_dir, force=False)
+                            if converted.ogg.exists():
+                                ogg_path = converted.ogg
+                        except Exception:
+                            ogg_path = None
+        if ogg_path is None:
+            cache_override = mode_cfg.get("cached_ogg_path")
+            if cache_override:
+                cached = Path(cache_override)
+                if cached.exists() and cached.is_file() and cached.suffix.lower() == ".ogg":
+                    ogg_path = cached
         if ogg_path is None:
             continue
 
@@ -2330,7 +2371,7 @@ def parse_args() -> argparse.Namespace:
     common.add_argument("--out-dir", type=Path, default=default_output_root(), help="Output folder")
     common.add_argument("--assets-root", type=Path, default=default_assets_root(), help="Path to builder assets folder")
     common.add_argument("--parent-mod-id", default="TrueMoozic", help="Optional required parent mod id; leave blank for standalone")
-    common.add_argument("--convert-audio", action="store_true", help="Convert supported audio into _ogg cache before build")
+    common.add_argument("--convert-audio", action="store_true", help="Convert supported audio into Conversions cache before build")
     common.add_argument("--force-rebuild-ogg", action="store_true", help="Force rebuild all cached OGG files")
 
     c = sub.add_parser("cassette", parents=[common], help="Build cassette pack")
@@ -2374,7 +2415,7 @@ def parse_args() -> argparse.Namespace:
         print(f"Found {len(catalog)} source audio file(s)")
         print(f"Ready {len(found_oggs)} cached .ogg file(s) in {audio_cache_root(audio_dir)}")
 
-        convert_now = _parse_yes_no(input("Convert/refresh _ogg cache now? (y/n): ").strip().lower(), default=True)
+        convert_now = _parse_yes_no(input("Convert/refresh Conversions cache now? (y/n): ").strip().lower(), default=True)
         if convert_now:
             force = _parse_yes_no(input("Rebuild all OGG files? (y/n): ").strip().lower(), default=False)
             summary = convert_audio_library(audio_dir=audio_dir, force=force)

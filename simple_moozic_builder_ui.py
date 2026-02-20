@@ -31,7 +31,9 @@ except Exception:
 
 from simple_moozic_builder import (
     _safe_song_stem,
+    AudioTrackEntry,
     BuildTrackEvent,
+    audio_cache_root,
     audio_source_root,
     app_root,
     bootstrap_runtime_folders,
@@ -53,6 +55,7 @@ from simple_moozic_builder import (
 
 STATE_SCHEMA_VERSION = 1
 LAST_STATE_FILENAME = ".smb_last_state.json"
+LAST_MIX_STATE_FILENAME = ".smb_last_mix_state.json"
 RECENT_LIST_FILENAME = ".smb_recent.json"
 RECENT_LIMIT = 20
 CRASH_LOG_FILENAME = "simple_moozic_builder_crash.log"
@@ -61,6 +64,7 @@ MAX_PREVIEW_TILES = 80
 
 KEYCODE_A = 65
 KEYCODE_S = 83
+KEYCODE_O = 79
 
 
 def _write_crash_log(exc_type, exc_value, exc_traceback, context: str = "Unhandled exception") -> Path:
@@ -242,7 +246,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         self.image_dir_active = self.image_dir_new
         self.image_dir_override: Path | None = None
         self.audio_dir_new = default_audio_root()
-        self.audio_dir_legacy = Path(__file__).resolve().parent / "Put your .ogg audio here"
+        self.audio_dir_legacy = Path(__file__).resolve().parent / "Put your audio here"
         self.audio_dir_active = self.audio_dir_new
         self.audio_dir_override: Path | None = None
         self.out_dir = default_output_root()
@@ -477,7 +481,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             ("cassette", "Cass", 60),
             ("vinyl", "Vinyl", 60),
             ("bside", "B-Side", 140),
-            ("cover", "Poster", 180),
+            ("cover", "Item Image", 180),
         ):
             self.tree.heading(col, text=text, command=lambda c=col: self.sort_by_column(c))
             self.tree.column(col, width=w, anchor="w")
@@ -506,9 +510,18 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         self.add_song_button = ctk.CTkButton(song_actions, text="+", width=34, height=34, command=self.add_song_files)
         self.add_song_button.pack(side="left")
         Tooltip(self.add_song_button, "Add Song")
+        self.add_folder_button = ctk.CTkButton(song_actions, text="\U0001F4C1", width=34, height=34, command=self.add_song_folder)
+        self.add_folder_button.pack(side="left", padx=(6, 0))
+        Tooltip(self.add_folder_button, "Add Folder")
         self.remove_song_button = ctk.CTkButton(song_actions, text="-", width=34, height=34, command=self.remove_selected_songs)
         self.remove_song_button.pack(side="left", padx=(6, 0))
         Tooltip(self.remove_song_button, "Remove Song")
+        self.move_song_up_button = ctk.CTkButton(song_actions, text="\u2191", width=34, height=34, command=self.move_selected_songs_up)
+        self.move_song_up_button.pack(side="left", padx=(6, 0))
+        Tooltip(self.move_song_up_button, "Move Up")
+        self.move_song_down_button = ctk.CTkButton(song_actions, text="\u2193", width=34, height=34, command=self.move_selected_songs_down)
+        self.move_song_down_button.pack(side="left", padx=(6, 0))
+        Tooltip(self.move_song_down_button, "Move Down")
 
         self.preview_title_label = ctk.CTkLabel(right, text="Build Preview", font=ctk.CTkFont(size=16, weight="bold"))
         self.preview_title_label.pack(anchor="w", padx=10, pady=(10, 4))
@@ -532,14 +545,18 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         self.menu_bar = tk.Menu(self)
         self.file_menu = tk.Menu(self.menu_bar, tearoff=0)
         self.file_menu.add_command(label="Save", accelerator="Ctrl+S", command=self.menu_save)
+        self.file_menu.add_command(label="Load", accelerator="Ctrl+O", command=self.menu_load)
         self.file_menu.add_command(label="Save As", command=self.menu_save_as)
-        self.file_menu.add_command(label="Load", command=self.menu_load)
         self.recent_menu = tk.Menu(self.file_menu, tearoff=0)
         self.file_menu.add_cascade(label="Recent", menu=self.recent_menu)
         self.file_menu.add_separator()
         self.file_menu.add_command(label="Exit", command=self.on_close)
         self._refresh_recent_menu()
         self.menu_bar.add_cascade(label="File", menu=self.file_menu)
+        self.add_menu = tk.Menu(self.menu_bar, tearoff=0)
+        self.add_menu.add_command(label="Add Song", command=self.add_song_files)
+        self.add_menu.add_command(label="Add Folder", command=self.add_song_folder)
+        self.menu_bar.add_cascade(label="Add", menu=self.add_menu)
         self.menu_bar.add_command(label="Create Mix", command=self.open_song_builder_popup)
         self.configure(menu=self.menu_bar)
 
@@ -558,6 +575,9 @@ class SimpleMoozicBuilderUI(ctk.CTk):
     def _on_ctrl_keypress(self, event):
         if self._is_key(event, KEYCODE_S, "s"):
             return self._on_ctrl_s(event)
+        if self._is_key(event, KEYCODE_O, "o"):
+            self.menu_load()
+            return "break"
         return None
 
     def _on_tree_ctrl_key(self, event):
@@ -570,6 +590,24 @@ class SimpleMoozicBuilderUI(ctk.CTk):
 
     def _recent_file(self) -> Path:
         return app_root() / RECENT_LIST_FILENAME
+
+    def _saves_root(self) -> Path:
+        root = app_root() / "Saves"
+        root.mkdir(parents=True, exist_ok=True)
+        return root
+
+    def _pack_saves_root(self) -> Path:
+        root = self._saves_root() / "packs"
+        root.mkdir(parents=True, exist_ok=True)
+        return root
+
+    def _mix_saves_root(self) -> Path:
+        root = self._saves_root() / "mixes"
+        root.mkdir(parents=True, exist_ok=True)
+        return root
+
+    def _mix_state_file(self) -> Path:
+        return app_root() / LAST_MIX_STATE_FILENAME
 
     def _project_snapshot(self) -> dict:
         return {
@@ -739,7 +777,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             title="Save Moozic Builder Project",
             defaultextension=".smbproj.json",
             filetypes=[("Moozic Builder Project", "*.smbproj.json"), ("JSON", "*.json")],
-            initialdir=str(app_root()),
+            initialdir=str(self._pack_saves_root()),
             parent=self,
         )
         if not selected:
@@ -750,7 +788,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         selected = filedialog.askopenfilename(
             title="Load Moozic Builder Project",
             filetypes=[("Moozic Builder Project", "*.smbproj.json"), ("JSON", "*.json")],
-            initialdir=str(app_root()),
+            initialdir=str(self._pack_saves_root()),
             parent=self,
         )
         if not selected:
@@ -821,20 +859,40 @@ class SimpleMoozicBuilderUI(ctk.CTk):
                 v += 1
         self.status_var.set(f"Selected: Cassette {c} | Vinyl {v}")
 
-    def _copy_audio_file_to_source(self, src: Path) -> Path:
-        source_root = audio_source_root(self.audio_dir_active)
-        source_root.mkdir(parents=True, exist_ok=True)
-        target = source_root / src.name
-        if target.resolve() == src.resolve():
-            return target
-        n = 2
-        while target.exists():
-            target = source_root / f"{src.stem} ({n}){src.suffix}"
-            n += 1
-        import shutil
+    def _audio_file_dialog_initial_dir(self) -> Path:
+        if self.audio_dir_active.exists():
+            return self.audio_dir_active
+        return audio_source_root(self.audio_dir_new)
 
-        shutil.copy2(src, target)
-        return target
+    def _song_status_for_paths(self, source: Path, ogg: Path) -> tuple[str, str]:
+        if source.suffix.lower() == ".ogg":
+            return "ready", "source ogg"
+        if not ogg.exists():
+            return "needs convert", "not converted"
+        try:
+            src_mtime = source.stat().st_mtime
+            ogg_mtime = ogg.stat().st_mtime
+            if ogg_mtime >= src_mtime:
+                return "ready", "up-to-date"
+            return "stale", "source newer"
+        except Exception:
+            return "ready", "up-to-date"
+
+    def _register_linked_song(self, source_file: Path) -> str | None:
+        src = source_file.resolve()
+        if not src.exists() or not src.is_file():
+            return None
+        if src.suffix.lower() not in {".ogg", ".mp3", ".wav", ".flac", ".m4a", ".aac", ".wma"}:
+            return None
+
+        cache_root = audio_cache_root(self.audio_dir_active.resolve())
+        ogg_name = src.name if src.suffix.lower() == ".ogg" else f"{src.stem}.ogg"
+        key = ogg_name
+        cfg = self.track_settings.setdefault(key, {})
+        cfg["source_path"] = str(src)
+        cfg["cached_ogg_path"] = str(cache_root / ogg_name)
+        self.excluded_oggs.discard(key)
+        return key
 
     def _move_song_to_bottom(self, song_name: str) -> None:
         idx = next((i for i, row in enumerate(self.track_rows) if row["ogg"].name == song_name), None)
@@ -851,24 +909,74 @@ class SimpleMoozicBuilderUI(ctk.CTk):
                 ("Audio", "*.ogg *.mp3 *.wav *.flac *.m4a *.aac *.wma"),
                 ("All files", "*.*"),
             ],
-            initialdir=str(self.audio_dir_active if self.audio_dir_active.exists() else audio_source_root(self.audio_dir_new)),
+            initialdir=str(self._audio_file_dialog_initial_dir()),
             parent=self,
         )
         if not selected:
             return
         added_names: list[str] = []
         for p in selected:
-            src = Path(p)
-            if not src.exists():
-                continue
-            dst = self._copy_audio_file_to_source(src)
-            ogg_name = dst.name if dst.suffix.lower() == ".ogg" else f"{dst.stem}.ogg"
-            self.excluded_oggs.discard(ogg_name)
-            added_names.append(ogg_name)
+            key = self._register_linked_song(Path(p))
+            if key:
+                added_names.append(key)
         self.refresh_songs()
         for name in added_names:
             self._move_song_to_bottom(name)
         self.status_var.set(f"Added {len(added_names)} song file(s)")
+
+    def add_song_folder(self) -> None:
+        selected = filedialog.askdirectory(
+            title="Add Song Folder",
+            initialdir=str(self._audio_file_dialog_initial_dir()),
+            parent=self,
+        )
+        if not selected:
+            return
+        folder = Path(selected)
+        if not folder.exists() or not folder.is_dir():
+            return
+        allowed = {".ogg", ".mp3", ".wav", ".flac", ".m4a", ".aac", ".wma"}
+        files = sorted([p for p in folder.iterdir() if p.is_file() and p.suffix.lower() in allowed], key=lambda p: p.name.lower())
+        if not files:
+            self.status_var.set("No supported audio files found in folder")
+            return
+        added_names: list[str] = []
+        for f in files:
+            key = self._register_linked_song(f)
+            if key:
+                added_names.append(key)
+        self.refresh_songs()
+        for name in added_names:
+            self._move_song_to_bottom(name)
+        self.status_var.set(f"Added {len(added_names)} song(s) from folder")
+
+    def _move_selected_rows(self, direction: int) -> None:
+        selected = list(self.tree.selection())
+        if not selected:
+            return
+        order = [row["ogg"].name for row in self.track_rows]
+        if direction < 0:
+            for key in sorted(selected, key=lambda k: order.index(k)):
+                idx = order.index(key)
+                if idx > 0:
+                    order[idx], order[idx - 1] = order[idx - 1], order[idx]
+        else:
+            for key in sorted(selected, key=lambda k: order.index(k), reverse=True):
+                idx = order.index(key)
+                if idx < len(order) - 1:
+                    order[idx], order[idx + 1] = order[idx + 1], order[idx]
+        rank = {name: i for i, name in enumerate(order)}
+        self.track_rows.sort(key=lambda row: rank.get(row["ogg"].name, len(rank)))
+        self._redraw_tree()
+        for key in selected:
+            if key in self.tree.get_children():
+                self.tree.selection_add(key)
+
+    def move_selected_songs_up(self) -> None:
+        self._move_selected_rows(-1)
+
+    def move_selected_songs_down(self) -> None:
+        self._move_selected_rows(1)
 
     def open_selected_file_location(self, row_key: str | None = None) -> None:
         selected = self._selected_keys()
@@ -982,6 +1090,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         popup.grab_set()
         popup.focus_set()
         self._apply_window_icon(popup)
+        mix_last_save_path: dict[str, Path | None] = {"path": None}
 
         frame = ctk.CTkFrame(popup)
         frame.pack(fill="both", expand=True, padx=16, pady=16)
@@ -1043,6 +1152,23 @@ class SimpleMoozicBuilderUI(ctk.CTk):
                     song_files.append(fp)
             redraw_files()
 
+        def add_source_folder() -> None:
+            selected = filedialog.askdirectory(
+                title="Select folder to stitch",
+                initialdir=str(self._audio_file_dialog_initial_dir()),
+                parent=popup,
+            )
+            if not selected:
+                return
+            folder = Path(selected)
+            if not folder.exists() or not folder.is_dir():
+                return
+            allowed = {".ogg", ".mp3", ".wav", ".flac", ".m4a", ".aac", ".wma"}
+            files = sorted([p for p in folder.iterdir() if p.is_file() and p.suffix.lower() in allowed], key=lambda p: p.name.lower())
+            for fp in files:
+                song_files.append(fp)
+            redraw_files()
+
         def remove_selected_files() -> None:
             selected_idx = [int(x) - 1 for x in files_tree.selection()]
             if not selected_idx:
@@ -1052,12 +1178,148 @@ class SimpleMoozicBuilderUI(ctk.CTk):
                     song_files.pop(idx)
             redraw_files()
 
+        def move_selected_files(direction: int) -> None:
+            selected_idx = sorted([int(x) - 1 for x in files_tree.selection()])
+            if not selected_idx:
+                return
+            if direction < 0:
+                for idx in selected_idx:
+                    if idx <= 0:
+                        continue
+                    song_files[idx - 1], song_files[idx] = song_files[idx], song_files[idx - 1]
+            else:
+                for idx in reversed(selected_idx):
+                    if idx >= len(song_files) - 1:
+                        continue
+                    song_files[idx + 1], song_files[idx] = song_files[idx], song_files[idx + 1]
+            redraw_files()
+            remap = []
+            for idx in selected_idx:
+                nxt = idx - 1 if direction < 0 else idx + 1
+                nxt = max(0, min(len(song_files) - 1, nxt))
+                remap.append(str(nxt + 1))
+            files_tree.selection_set(remap)
+
+        def clear_files() -> None:
+            song_files.clear()
+            redraw_files()
+
+        def mix_snapshot() -> dict:
+            return {
+                "schema_version": 1,
+                "name": song_name_var.get().strip(),
+                "files": [str(p) for p in song_files],
+            }
+
+        def apply_mix_snapshot(data: dict) -> bool:
+            if not isinstance(data, dict):
+                return False
+            loaded_files: list[Path] = []
+            for raw in data.get("files", []):
+                p = Path(str(raw))
+                if p.exists() and p.is_file():
+                    loaded_files.append(p)
+            song_files.clear()
+            song_files.extend(loaded_files)
+            song_name_var.set(str(data.get("name", "") or song_name_var.get()))
+            redraw_files()
+            return True
+
+        def save_mix_to(target: Path) -> bool:
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(json.dumps(mix_snapshot(), indent=2), encoding="utf-8")
+                mix_last_save_path["path"] = target
+                return True
+            except Exception as e:
+                messagebox.showerror("Mix Builder", f"Failed to save mix:\n{e}", parent=popup)
+                return False
+
+        def save_mix_as() -> None:
+            default_name = _safe_song_stem(song_name_var.get().strip() or "New Mix")
+            selected = filedialog.asksaveasfilename(
+                title="Save Mix Project",
+                defaultextension=".smbmix.json",
+                filetypes=[("Moozic Mix Project", "*.smbmix.json"), ("JSON", "*.json")],
+                initialdir=str(self._mix_saves_root()),
+                initialfile=f"{default_name}.smbmix.json",
+                parent=popup,
+            )
+            if not selected:
+                return
+            save_mix_to(Path(selected))
+
+        def save_mix() -> None:
+            target = mix_last_save_path["path"]
+            if target is None:
+                save_mix_as()
+                return
+            save_mix_to(target)
+
+        def load_mix_file() -> None:
+            selected = filedialog.askopenfilename(
+                title="Load Mix Project",
+                filetypes=[("Moozic Mix Project", "*.smbmix.json"), ("JSON", "*.json")],
+                initialdir=str(self._mix_saves_root()),
+                parent=popup,
+            )
+            if not selected:
+                return
+            path = Path(selected)
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except Exception as e:
+                messagebox.showerror("Mix Builder", f"Failed to load mix:\n{e}", parent=popup)
+                return
+            if apply_mix_snapshot(data):
+                mix_last_save_path["path"] = path
+
+        def save_last_mix_state() -> None:
+            try:
+                self._mix_state_file().write_text(json.dumps(mix_snapshot(), indent=2), encoding="utf-8")
+            except Exception:
+                pass
+
+        def load_last_mix_state() -> None:
+            state_path = self._mix_state_file()
+            if not state_path.exists():
+                return
+            try:
+                data = json.loads(state_path.read_text(encoding="utf-8"))
+            except Exception:
+                return
+            apply_mix_snapshot(data)
+
+        popup_menu = tk.Menu(popup)
+        popup_file_menu = tk.Menu(popup_menu, tearoff=0)
+        popup_file_menu.add_command(label="Save", command=save_mix)
+        popup_file_menu.add_command(label="Save As", command=save_mix_as)
+        popup_file_menu.add_command(label="Load", command=load_mix_file)
+        popup_menu.add_cascade(label="File", menu=popup_file_menu)
+        popup_add_menu = tk.Menu(popup_menu, tearoff=0)
+        popup_add_menu.add_command(label="Add Song", command=add_source_files)
+        popup_add_menu.add_command(label="Add Folder", command=add_source_folder)
+        popup_menu.add_cascade(label="Add", menu=popup_add_menu)
+        popup.configure(menu=popup_menu)
+
         add_btn = ctk.CTkButton(controls, text="+", width=34, height=34, command=add_source_files)
         add_btn.pack(side="left")
         Tooltip(add_btn, "Add Song")
+        add_folder_btn = ctk.CTkButton(controls, text="\U0001F4C1", width=34, height=34, command=add_source_folder)
+        add_folder_btn.pack(side="left", padx=(6, 0))
+        Tooltip(add_folder_btn, "Add Folder")
         remove_btn = ctk.CTkButton(controls, text="-", width=34, height=34, command=remove_selected_files)
         remove_btn.pack(side="left", padx=(6, 0))
         Tooltip(remove_btn, "Remove Song")
+        up_btn = ctk.CTkButton(controls, text="\u2191", width=34, height=34, command=lambda: move_selected_files(-1))
+        up_btn.pack(side="left", padx=(6, 0))
+        Tooltip(up_btn, "Move Up")
+        down_btn = ctk.CTkButton(controls, text="\u2193", width=34, height=34, command=lambda: move_selected_files(1))
+        down_btn.pack(side="left", padx=(6, 0))
+        Tooltip(down_btn, "Move Down")
+        clear_btn = ctk.CTkButton(controls, text="Clear", width=68, height=34, command=clear_files)
+        clear_btn.pack(side="left", padx=(6, 0))
+        Tooltip(clear_btn, "Clear List")
 
         build_msg_var = tk.StringVar(value="")
         ctk.CTkLabel(frame, textvariable=build_msg_var, anchor="w").pack(fill="x", padx=8, pady=(0, 4))
@@ -1150,6 +1412,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             stop_pulse()
             stop_popup_preview()
             self._hide_hover_tip()
+            save_last_mix_state()
             popup.destroy()
 
         popup.protocol("WM_DELETE_WINDOW", on_cancel)
@@ -1165,7 +1428,8 @@ class SimpleMoozicBuilderUI(ctk.CTk):
                 return
             if build_in_progress["value"]:
                 return
-            src_root = audio_source_root(self.audio_dir_active.resolve())
+            src_root = audio_cache_root(self.audio_dir_active.resolve())
+            src_root.mkdir(parents=True, exist_ok=True)
             out_stem = _safe_song_stem(name)
             out_path = src_root / f"{out_stem}.ogg"
             overwrite_existing = False
@@ -1232,6 +1496,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
                         self.status_var.set(f"Created song: {out_file.name}")
                         build_in_progress["value"] = False
                         stop_popup_preview()
+                        save_last_mix_state()
                         popup.destroy()
                     self.after(0, done_ok)
                 except BaseException as e:
@@ -1263,6 +1528,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         btn_cancel.pack(side="right")
         btn_ok = ctk.CTkButton(bottom, text="Create", width=110, command=on_ok)
         btn_ok.pack(side="right", padx=(0, 8))
+        load_last_mix_state()
 
     def _pick_active_audio_dir(self) -> Path:
         if self.audio_dir_override is not None and self.audio_dir_override.exists():
@@ -1374,13 +1640,26 @@ class SimpleMoozicBuilderUI(ctk.CTk):
     def refresh_songs(self) -> None:
         self.audio_dir_active = self._pick_active_audio_dir()
         rows = refresh_song_catalog(self.audio_dir_active)
-        all_keys = {r.ogg.name for r in rows}
+        row_map = {r.ogg.name: r for r in rows}
+        _, cache_root = ensure_audio_workspace(self.audio_dir_active.resolve())
+        for key, cfg in self.track_settings.items():
+            source_raw = cfg.get("source_path")
+            if not source_raw or key in row_map:
+                continue
+            src = Path(source_raw)
+            if not src.exists() or not src.is_file():
+                continue
+            ogg = src if src.suffix.lower() == ".ogg" else (cache_root / key)
+            status, detail = self._song_status_for_paths(src, ogg)
+            row_map[key] = AudioTrackEntry(source=src, ogg=ogg, status=status, detail=detail)
+        merged_rows = list(row_map.values())
+        all_keys = {r.ogg.name for r in merged_rows}
         if self.excluded_oggs:
             self.excluded_oggs = {k for k in self.excluded_oggs if k in all_keys}
 
         visible_rows = [
             {"source": r.source, "ogg": r.ogg, "status": r.status, "detail": r.detail}
-            for r in rows
+            for r in merged_rows
             if r.ogg.name not in self.excluded_oggs
         ]
 
@@ -1395,9 +1674,13 @@ class SimpleMoozicBuilderUI(ctk.CTk):
                     "cover": None,
                     "b_side": None,
                     "vinyl_art_placement": self.global_vinyl_mask_var.get(),
+                    "source_path": str(row["source"]),
+                    "cached_ogg_path": str(row["ogg"]),
                 }
             else:
                 cfg = self.track_settings[key]
+                cfg["source_path"] = str(row["source"])
+                cfg["cached_ogg_path"] = str(row["ogg"])
                 cover = cfg.get("cover")
                 if cover and not Path(cover).exists():
                     cfg["cover"] = None
@@ -2019,7 +2302,11 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         global_mask = (self.global_vinyl_mask_var.get() or "inside").strip().lower()
 
         track_modes: dict[str, dict] = {}
+        row_by_key = {row["ogg"].name: row for row in self.track_rows}
         for ogg_name, cfg in self.track_settings.items():
+            row = row_by_key.get(ogg_name)
+            if row is None:
+                continue
             row_cfg = dict(cfg)
             if not row_cfg.get("cover"):
                 row_cfg["cover"] = None
@@ -2027,6 +2314,8 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             if not b_side or not Path(b_side).exists():
                 row_cfg["b_side"] = None
             row_cfg["vinyl_art_placement"] = global_mask
+            row_cfg["source_path"] = str(row["source"])
+            row_cfg["cached_ogg_path"] = str(row["ogg"])
             track_modes[ogg_name] = row_cfg
 
         return {
