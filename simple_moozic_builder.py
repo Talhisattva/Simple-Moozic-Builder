@@ -54,10 +54,10 @@ VINYL_RECORD_VARIANT_MIN = 1
 VINYL_RECORD_VARIANT_MAX = 5
 VINYL_ALBUM_VARIANT_MIN = 1
 VINYL_ALBUM_VARIANT_MAX = 12
-AUDIO_FOLDER_NAME = "Audio Library"
-AUDIO_CACHE_FOLDER_NAME = "Conversions"
+AUDIO_FOLDER_NAME = "_ogg"
+AUDIO_CACHE_FOLDER_NAME = "_ogg"
 LEGACY_AUDIO_FOLDER_NAME = "Put your audio here"
-LEGACY_AUDIO_CACHE_FOLDER_NAME = "_ogg"
+LEGACY_AUDIO_CACHE_FOLDER_NAME = "Conversions"
 AUDIO_SOURCE_EXTENSIONS = {
     ".ogg",
     ".mp3",
@@ -101,8 +101,8 @@ def bootstrap_runtime_folders(base_dir: Optional[Path] = None) -> dict[str, Path
     legacy_audio = root / LEGACY_AUDIO_FOLDER_NAME
     if (not any(audio.iterdir())) and legacy_audio.exists() and legacy_audio.is_dir():
         audio = legacy_audio
-    audio_cache = ensure(audio / AUDIO_CACHE_FOLDER_NAME)
-    legacy_cache = audio / LEGACY_AUDIO_CACHE_FOLDER_NAME
+    audio_cache = ensure(root / AUDIO_CACHE_FOLDER_NAME)
+    legacy_cache = root / LEGACY_AUDIO_CACHE_FOLDER_NAME
     if (not any(audio_cache.iterdir())) and legacy_cache.exists() and legacy_cache.is_dir():
         audio_cache = legacy_cache
     images = ensure(root / "Put your images here")
@@ -635,15 +635,15 @@ def workshop_song_lines(oggs: list[Path], song_b_sides: Optional[dict[str, Path 
 
 def audio_source_root(audio_dir: Path) -> Path:
     if audio_dir.name in (AUDIO_CACHE_FOLDER_NAME, LEGACY_AUDIO_CACHE_FOLDER_NAME):
-        return audio_dir.parent
+        return audio_dir
     return audio_dir
 
 
 def audio_cache_root(audio_dir: Path) -> Path:
     if audio_dir.name in (AUDIO_CACHE_FOLDER_NAME, LEGACY_AUDIO_CACHE_FOLDER_NAME):
         return audio_dir
-    preferred = audio_dir / AUDIO_CACHE_FOLDER_NAME
-    legacy = audio_dir / LEGACY_AUDIO_CACHE_FOLDER_NAME
+    preferred = audio_dir / AUDIO_CACHE_FOLDER_NAME if AUDIO_CACHE_FOLDER_NAME else audio_dir
+    legacy = audio_dir / LEGACY_AUDIO_CACHE_FOLDER_NAME if LEGACY_AUDIO_CACHE_FOLDER_NAME else audio_dir
     if legacy.exists() and legacy.is_dir() and not preferred.exists():
         return legacy
     return preferred
@@ -2152,6 +2152,9 @@ def default_audio_root() -> Path:
     root = app_root()
     preferred = root / AUDIO_FOLDER_NAME
     legacy = root / LEGACY_AUDIO_FOLDER_NAME
+    legacy_cache = root / LEGACY_AUDIO_CACHE_FOLDER_NAME
+    if legacy_cache.exists() and legacy_cache.is_dir() and not preferred.exists():
+        return legacy_cache
     if legacy.exists() and legacy.is_dir() and not preferred.exists():
         return legacy
     return preferred

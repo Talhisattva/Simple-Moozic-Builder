@@ -34,7 +34,6 @@ from simple_moozic_builder import (
     AudioTrackEntry,
     BuildTrackEvent,
     audio_cache_root,
-    audio_source_root,
     app_root,
     bootstrap_runtime_folders,
     build_mixed_from_config,
@@ -242,15 +241,12 @@ class SimpleMoozicBuilderUI(ctk.CTk):
 
         self.assets_root = default_assets_root()
         self.cover_root = default_cover_root()
-        self.image_dir_new = default_cover_root()
-        self.image_dir_active = self.image_dir_new
-        self.image_dir_override: Path | None = None
-        self.audio_dir_new = default_audio_root()
-        self.audio_dir_legacy = Path(__file__).resolve().parent / "Put your audio here"
-        self.audio_dir_active = self.audio_dir_new
+        self.audio_dir_active = default_audio_root()
         self.audio_dir_override: Path | None = None
         self.out_dir = default_output_root()
         self.workshop_dir_override: Path | None = None
+        self.last_song_pick_dir = Path.home()
+        self.last_image_pick_dir = self.cover_root if self.cover_root.exists() else Path.home()
 
         self.default_poster_path = self.assets_root / "poster" / "poster.png"
         self.poster_path: Path | None = self.default_poster_path if self.default_poster_path.exists() else None
@@ -282,8 +278,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         self.author_var = tk.StringVar(value="")
         self.poster_add_name_var = tk.BooleanVar(value=True)
         self.poster_var = tk.StringVar(value="poster.png" if self.poster_path else "Select poster")
-        self.audio_status_var = tk.StringVar(value=f"/{self.audio_dir_new.name}")
-        self.image_status_var = tk.StringVar(value=f"/{self.image_dir_new.name}")
+        self.audio_status_var = tk.StringVar(value=f"/{self.audio_dir_active.name}")
         self.filter_var = tk.StringVar(value="")
         self.status_var = tk.StringVar(value="Ready")
         self.completion_var = tk.StringVar(value="")
@@ -367,7 +362,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         self.poster_add_name_checkbox.pack(side="left", padx=(8, 0))
         Tooltip(self.poster_add_name_checkbox, "Add Name to Poster (Workshop Only)")
 
-        ctk.CTkLabel(form_grid, text="Audio Source:", width=96, anchor="w").grid(row=2, column=2, sticky="w", padx=(16, 0))
+        ctk.CTkLabel(form_grid, text=".ogg Output:", width=96, anchor="w").grid(row=2, column=2, sticky="w", padx=(16, 0))
         self.audio_source_button = ctk.CTkButton(
             form_grid,
             text=self.audio_status_var.get(),
@@ -375,14 +370,6 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             command=self.pick_audio_source,
         )
         self.audio_source_button.grid(row=2, column=3, sticky="ew")
-        ctk.CTkLabel(form_grid, text="Image Source:", width=96, anchor="w").grid(row=3, column=2, sticky="w", padx=(16, 0))
-        self.image_source_button = ctk.CTkButton(
-            form_grid,
-            text=self.image_status_var.get(),
-            width=180,
-            command=self.pick_image_source,
-        )
-        self.image_source_button.grid(row=3, column=3, sticky="ew")
 
         controls = ctk.CTkFrame(left)
         controls.pack(fill="x", padx=8, pady=(0, 8))
@@ -509,10 +496,10 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         song_actions.pack(fill="x", padx=8, pady=(0, 4))
         self.add_song_button = ctk.CTkButton(song_actions, text="+", width=34, height=34, command=self.add_song_files)
         self.add_song_button.pack(side="left")
-        Tooltip(self.add_song_button, "Add Song")
+        Tooltip(self.add_song_button, "Add Song(s)")
         self.add_folder_button = ctk.CTkButton(song_actions, text="\U0001F4C1", width=34, height=34, command=self.add_song_folder)
         self.add_folder_button.pack(side="left", padx=(6, 0))
-        Tooltip(self.add_folder_button, "Add Folder")
+        Tooltip(self.add_folder_button, "Add Folder(s)")
         self.remove_song_button = ctk.CTkButton(song_actions, text="-", width=34, height=34, command=self.remove_selected_songs)
         self.remove_song_button.pack(side="left", padx=(6, 0))
         Tooltip(self.remove_song_button, "Remove Song")
@@ -554,8 +541,8 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         self._refresh_recent_menu()
         self.menu_bar.add_cascade(label="File", menu=self.file_menu)
         self.add_menu = tk.Menu(self.menu_bar, tearoff=0)
-        self.add_menu.add_command(label="Add Song", command=self.add_song_files)
-        self.add_menu.add_command(label="Add Folder", command=self.add_song_folder)
+        self.add_menu.add_command(label="Add Song(s)", command=self.add_song_files)
+        self.add_menu.add_command(label="Add Folder(s)", command=self.add_song_folder)
         self.menu_bar.add_cascade(label="Add", menu=self.add_menu)
         self.menu_bar.add_command(label="Create Mix", command=self.open_song_builder_popup)
         self.configure(menu=self.menu_bar)
@@ -618,8 +605,9 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             "author": self.author_var.get().strip(),
             "poster_path": str(self.poster_path) if self.poster_path else None,
             "add_name_to_poster": bool(self.poster_add_name_var.get()),
-            "audio_source": str(self.audio_dir_active),
-            "image_source": str(self.cover_root),
+            "ogg_output_dir": str(self.audio_dir_active),
+            "last_song_pick_dir": str(self.last_song_pick_dir),
+            "last_image_pick_dir": str(self.last_image_pick_dir),
             "output_dir": str(self.out_dir),
             "workshop_dir": str(self.workshop_dir_override) if self.workshop_dir_override else None,
             "global_vinyl_mask": (self.global_vinyl_mask_var.get() or "inside").strip().lower(),
@@ -635,7 +623,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         self.name_var.set(str(data.get("name", "") or self.name_var.get()))
         self.author_var.set(str(data.get("author", "") or ""))
 
-        audio_source_raw = data.get("audio_source")
+        audio_source_raw = data.get("ogg_output_dir") or data.get("audio_source")
         if audio_source_raw:
             p = Path(audio_source_raw)
             if p.exists():
@@ -644,15 +632,19 @@ class SimpleMoozicBuilderUI(ctk.CTk):
                 self.audio_status_var.set(f"/{p.name}")
                 self._refresh_audio_source_button_text()
 
-        image_source_raw = data.get("image_source")
-        if image_source_raw:
-            p = Path(image_source_raw)
-            if p.exists():
-                self.cover_root = p
-                self.image_dir_override = p
-                self.image_dir_active = p
-                self.image_status_var.set(f"/{p.name}")
-                self._refresh_image_source_button_text()
+        last_song_pick_raw = data.get("last_song_pick_dir")
+        if last_song_pick_raw:
+            p = Path(last_song_pick_raw)
+            if p.exists() and p.is_dir():
+                self.last_song_pick_dir = p
+
+        last_image_pick_raw = data.get("last_image_pick_dir")
+        if not last_image_pick_raw:
+            last_image_pick_raw = data.get("image_source")
+        if last_image_pick_raw:
+            p = Path(last_image_pick_raw)
+            if p.exists() and p.is_dir():
+                self.last_image_pick_dir = p
 
         output_raw = data.get("output_dir")
         if output_raw:
@@ -860,9 +852,18 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         self.status_var.set(f"Selected: Cassette {c} | Vinyl {v}")
 
     def _audio_file_dialog_initial_dir(self) -> Path:
+        if self.last_song_pick_dir.exists():
+            return self.last_song_pick_dir
         if self.audio_dir_active.exists():
             return self.audio_dir_active
-        return audio_source_root(self.audio_dir_new)
+        return Path.home()
+
+    def _image_file_dialog_initial_dir(self) -> Path:
+        if self.last_image_pick_dir.exists():
+            return self.last_image_pick_dir
+        if self.cover_root.exists():
+            return self.cover_root
+        return Path.home()
 
     def _song_status_for_paths(self, source: Path, ogg: Path) -> tuple[str, str]:
         if source.suffix.lower() == ".ogg":
@@ -904,7 +905,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
 
     def add_song_files(self) -> None:
         selected = filedialog.askopenfilenames(
-            title="Add Song Files",
+            title="Add Song(s)",
             filetypes=[
                 ("Audio", "*.ogg *.mp3 *.wav *.flac *.m4a *.aac *.wma"),
                 ("All files", "*.*"),
@@ -919,6 +920,8 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             key = self._register_linked_song(Path(p))
             if key:
                 added_names.append(key)
+        if selected:
+            self.last_song_pick_dir = Path(selected[0]).resolve().parent
         self.refresh_songs()
         for name in added_names:
             self._move_song_to_bottom(name)
@@ -926,7 +929,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
 
     def add_song_folder(self) -> None:
         selected = filedialog.askdirectory(
-            title="Add Song Folder",
+            title="Add Folder(s)",
             initialdir=str(self._audio_file_dialog_initial_dir()),
             parent=self,
         )
@@ -936,7 +939,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         if not folder.exists() or not folder.is_dir():
             return
         allowed = {".ogg", ".mp3", ".wav", ".flac", ".m4a", ".aac", ".wma"}
-        files = sorted([p for p in folder.iterdir() if p.is_file() and p.suffix.lower() in allowed], key=lambda p: p.name.lower())
+        files = sorted([p for p in folder.rglob("*") if p.is_file() and p.suffix.lower() in allowed], key=lambda p: (str(p.parent).lower(), p.name.lower()))
         if not files:
             self.status_var.set("No supported audio files found in folder")
             return
@@ -945,10 +948,11 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             key = self._register_linked_song(f)
             if key:
                 added_names.append(key)
+        self.last_song_pick_dir = folder.resolve()
         self.refresh_songs()
         for name in added_names:
             self._move_song_to_bottom(name)
-        self.status_var.set(f"Added {len(added_names)} song(s) from folder")
+        self.status_var.set(f"Added {len(added_names)} song(s) from folder(s)")
 
     def _move_selected_rows(self, direction: int) -> None:
         selected = list(self.tree.selection())
@@ -1136,12 +1140,12 @@ class SimpleMoozicBuilderUI(ctk.CTk):
 
         def add_source_files() -> None:
             selected = filedialog.askopenfilenames(
-                title="Select files to stitch",
+                title="Add Song(s)",
                 filetypes=[
                     ("Audio", "*.ogg *.mp3 *.wav *.flac *.m4a *.aac *.wma"),
                     ("All files", "*.*"),
                 ],
-                initialdir=str(self.audio_dir_active if self.audio_dir_active.exists() else audio_source_root(self.audio_dir_new)),
+                initialdir=str(self._audio_file_dialog_initial_dir()),
                 parent=popup,
             )
             if not selected:
@@ -1150,11 +1154,12 @@ class SimpleMoozicBuilderUI(ctk.CTk):
                 fp = Path(p)
                 if fp.exists() and fp.is_file():
                     song_files.append(fp)
+            self.last_song_pick_dir = Path(selected[0]).resolve().parent
             redraw_files()
 
         def add_source_folder() -> None:
             selected = filedialog.askdirectory(
-                title="Select folder to stitch",
+                title="Add Folder(s)",
                 initialdir=str(self._audio_file_dialog_initial_dir()),
                 parent=popup,
             )
@@ -1164,9 +1169,10 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             if not folder.exists() or not folder.is_dir():
                 return
             allowed = {".ogg", ".mp3", ".wav", ".flac", ".m4a", ".aac", ".wma"}
-            files = sorted([p for p in folder.iterdir() if p.is_file() and p.suffix.lower() in allowed], key=lambda p: p.name.lower())
+            files = sorted([p for p in folder.rglob("*") if p.is_file() and p.suffix.lower() in allowed], key=lambda p: (str(p.parent).lower(), p.name.lower()))
             for fp in files:
                 song_files.append(fp)
+            self.last_song_pick_dir = folder.resolve()
             redraw_files()
 
         def remove_selected_files() -> None:
@@ -1297,17 +1303,17 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         popup_file_menu.add_command(label="Load", command=load_mix_file)
         popup_menu.add_cascade(label="File", menu=popup_file_menu)
         popup_add_menu = tk.Menu(popup_menu, tearoff=0)
-        popup_add_menu.add_command(label="Add Song", command=add_source_files)
-        popup_add_menu.add_command(label="Add Folder", command=add_source_folder)
+        popup_add_menu.add_command(label="Add Song(s)", command=add_source_files)
+        popup_add_menu.add_command(label="Add Folder(s)", command=add_source_folder)
         popup_menu.add_cascade(label="Add", menu=popup_add_menu)
         popup.configure(menu=popup_menu)
 
         add_btn = ctk.CTkButton(controls, text="+", width=34, height=34, command=add_source_files)
         add_btn.pack(side="left")
-        Tooltip(add_btn, "Add Song")
+        Tooltip(add_btn, "Add Song(s)")
         add_folder_btn = ctk.CTkButton(controls, text="\U0001F4C1", width=34, height=34, command=add_source_folder)
         add_folder_btn.pack(side="left", padx=(6, 0))
-        Tooltip(add_folder_btn, "Add Folder")
+        Tooltip(add_folder_btn, "Add Folder(s)")
         remove_btn = ctk.CTkButton(controls, text="-", width=34, height=34, command=remove_selected_files)
         remove_btn.pack(side="left", padx=(6, 0))
         Tooltip(remove_btn, "Remove Song")
@@ -1531,30 +1537,16 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         load_last_mix_state()
 
     def _pick_active_audio_dir(self) -> Path:
-        if self.audio_dir_override is not None and self.audio_dir_override.exists():
-            self.audio_status_var.set(f"/{self.audio_dir_override.name}")
-            self._refresh_audio_source_button_text()
-            return self.audio_dir_override
-
-        self.audio_dir_new.mkdir(parents=True, exist_ok=True)
-        new_rows = refresh_song_catalog(self.audio_dir_new)
-        if new_rows:
-            self.audio_status_var.set(f"/{self.audio_dir_new.name}")
-            self._refresh_audio_source_button_text()
-            return self.audio_dir_new
-        if self.audio_dir_legacy.exists():
-            legacy_rows = refresh_song_catalog(self.audio_dir_legacy)
-            if legacy_rows:
-                self.audio_status_var.set(f"/{self.audio_dir_legacy.name}")
-                self._refresh_audio_source_button_text()
-                return self.audio_dir_legacy
-        self.audio_status_var.set(f"/{self.audio_dir_new.name}")
+        target = self.audio_dir_override or self.audio_dir_active
+        target.mkdir(parents=True, exist_ok=True)
+        self.audio_dir_active = target
+        self.audio_status_var.set(f"/{target.name}")
         self._refresh_audio_source_button_text()
-        return self.audio_dir_new
+        return target
 
     def pick_audio_source(self) -> None:
-        initial = self.audio_dir_active if self.audio_dir_active.exists() else self.audio_dir_new
-        selected = filedialog.askdirectory(title="Select audio source folder", initialdir=str(initial), parent=self)
+        initial = self.audio_dir_active if self.audio_dir_active.exists() else Path.home()
+        selected = filedialog.askdirectory(title="Select .ogg output folder", initialdir=str(initial), parent=self)
         if selected:
             self.audio_dir_override = Path(selected)
             self.audio_dir_active = self.audio_dir_override
@@ -1566,30 +1558,16 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         if hasattr(self, "audio_source_button"):
             self.audio_source_button.configure(text=self.audio_status_var.get())
 
-    def pick_image_source(self) -> None:
-        initial = self.image_dir_active if self.image_dir_active.exists() else self.image_dir_new
-        selected = filedialog.askdirectory(title="Select image source folder", initialdir=str(initial), parent=self)
-        if selected:
-            self.image_dir_override = Path(selected)
-            self.image_dir_active = self.image_dir_override
-            self.cover_root = self.image_dir_active
-            self.image_status_var.set(f"/{self.image_dir_active.name}")
-            self._refresh_image_source_button_text()
-
-    def _refresh_image_source_button_text(self) -> None:
-        if hasattr(self, "image_source_button"):
-            self.image_source_button.configure(text=self.image_status_var.get())
-
     def pick_poster(self) -> None:
-        self.cover_root.mkdir(parents=True, exist_ok=True)
         selected = filedialog.askopenfilename(
             title="Select workshop poster",
-            initialdir=str(self.cover_root),
+            initialdir=str(self._image_file_dialog_initial_dir()),
             filetypes=[("Images", "*.png;*.jpg;*.jpeg;*.webp;*.bmp")],
             parent=self,
         )
         if selected:
             self.poster_path = Path(selected)
+            self.last_image_pick_dir = self.poster_path.resolve().parent
             self.poster_var.set(self.poster_path.name)
             self._update_top_poster_preview(self.poster_path)
 
@@ -1812,11 +1790,12 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         if action == "bside":
             selected = filedialog.askopenfilename(
                 title="Select B-Side audio",
-                initialdir=str(self.audio_dir_active if self.audio_dir_active.exists() else audio_source_root(self.audio_dir_new)),
+                initialdir=str(self._audio_file_dialog_initial_dir()),
                 filetypes=[("Audio", "*.ogg *.mp3 *.wav *.flac *.m4a *.aac *.wma"), ("All files", "*.*")],
                 parent=self,
             )
             if selected:
+                self.last_song_pick_dir = Path(selected).resolve().parent
                 for key in selected_rows:
                     self.track_settings.setdefault(key, {})["b_side"] = str(Path(selected))
                 self._redraw_tree()
@@ -1826,11 +1805,12 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         if action == "cover":
             selected = filedialog.askopenfilename(
                 title="Select song cover",
-                initialdir=str(self.cover_root),
+                initialdir=str(self._image_file_dialog_initial_dir()),
                 filetypes=[("Images", "*.png;*.jpg;*.jpeg;*.webp;*.bmp")],
                 parent=self,
             )
             if selected:
+                self.last_image_pick_dir = Path(selected).resolve().parent
                 for key in selected_rows:
                     self.track_settings.setdefault(key, {})["cover"] = str(Path(selected))
                 self._redraw_tree()
@@ -2483,14 +2463,11 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         self.global_vinyl_mask_var.set("inside")
         self._refresh_global_vinyl_mask_button()
         self.audio_dir_override = None
-        self.image_dir_override = None
-        self.audio_dir_active = self.audio_dir_new
-        self.image_dir_active = self.image_dir_new
-        self.cover_root = self.image_dir_new
-        self.audio_status_var.set(f"/{self.audio_dir_new.name}")
-        self.image_status_var.set(f"/{self.image_dir_new.name}")
+        self.audio_dir_active = default_audio_root()
+        self.last_song_pick_dir = Path.home()
+        self.last_image_pick_dir = self.cover_root if self.cover_root.exists() else Path.home()
+        self.audio_status_var.set(f"/{self.audio_dir_active.name}")
         self._refresh_audio_source_button_text()
-        self._refresh_image_source_button_text()
         self.track_settings.clear()
         self.excluded_oggs.clear()
         self.filter_var.set("")
