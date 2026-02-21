@@ -303,11 +303,22 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
     def _load_ui_icon(self, filename: str) -> ctk.CTkImage | None:
-        candidates = [
-            app_root() / "smb_icons" / filename,
-            bundled_resource_root() / "smb_icons" / filename,
-            app_root() / "_internal" / "smb_icons" / filename,
+        exe_dir = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else None
+        meipass = Path(getattr(sys, "_MEIPASS", "")) if getattr(sys, "_MEIPASS", None) else None
+        module_dir = Path(__file__).resolve().parent
+        roots = [
+            app_root(),
+            bundled_resource_root(),
+            module_dir,
         ]
+        if exe_dir is not None:
+            roots.append(exe_dir)
+        if meipass is not None:
+            roots.append(meipass)
+        candidates = []
+        for root in roots:
+            candidates.append(root / "smb_icons" / filename)
+            candidates.append(root / "_internal" / "smb_icons" / filename)
         icon_path = next((p for p in candidates if p.exists() and p.is_file()), None)
         if icon_path is None:
             return None
