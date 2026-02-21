@@ -21,7 +21,6 @@ extra_datas = [
     ("assets", "assets"),
     ("smb_icons", "smb_icons"),
     ("icon.ico", "."),
-    ("icon32.png", "."),
 ]
 extra_datas += _safe_collect_data("soundfile")
 
