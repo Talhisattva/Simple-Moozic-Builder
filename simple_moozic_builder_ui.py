@@ -35,6 +35,7 @@ from simple_moozic_builder import (
     BuildTrackEvent,
     audio_cache_root,
     app_root,
+    bundled_resource_root,
     bootstrap_runtime_folders,
     build_mixed_from_config,
     convert_single_audio_file,
@@ -302,8 +303,13 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
     def _load_ui_icon(self, filename: str) -> ctk.CTkImage | None:
-        icon_path = app_root() / "smb_icons" / filename
-        if not icon_path.exists() or not icon_path.is_file():
+        candidates = [
+            app_root() / "smb_icons" / filename,
+            bundled_resource_root() / "smb_icons" / filename,
+            app_root() / "_internal" / "smb_icons" / filename,
+        ]
+        icon_path = next((p for p in candidates if p.exists() and p.is_file()), None)
+        if icon_path is None:
             return None
         try:
             with Image.open(icon_path) as im:
