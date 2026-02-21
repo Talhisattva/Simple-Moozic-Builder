@@ -19,6 +19,7 @@ def _safe_collect_bins(pkg: str):
 
 extra_datas = [
     ("assets", "assets"),
+    ("smb_icons", "smb_icons"),
     ("icon.ico", "."),
     ("icon32.png", "."),
 ]

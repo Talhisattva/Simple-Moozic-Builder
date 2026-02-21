@@ -37,7 +37,6 @@ from simple_moozic_builder import (
     app_root,
     bootstrap_runtime_folders,
     build_mixed_from_config,
-    convert_audio_library,
     convert_single_audio_file,
     create_song_from_sources,
     default_assets_root,
@@ -271,6 +270,8 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         self._hover_tip_window: tk.Toplevel | None = None
         self._window_icon_image: tk.PhotoImage | None = None
         self._window_icon_images: list[tk.PhotoImage] = []
+        self.cassette_switch_icon = self._load_ui_icon("CassIcon24.png")
+        self.vinyl_switch_icon = self._load_ui_icon("VinylIcon24.png")
 
         self.mod_id_var = tk.StringVar(value="TM_MyPack")
         self.parent_mod_var = tk.StringVar(value="TrueMoozic")
@@ -299,6 +300,18 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         self._bind_shortcuts()
         self._load_last_session_state()
         self.protocol("WM_DELETE_WINDOW", self.on_close)
+
+    def _load_ui_icon(self, filename: str) -> ctk.CTkImage | None:
+        icon_path = app_root() / "smb_icons" / filename
+        if not icon_path.exists() or not icon_path.is_file():
+            return None
+        try:
+            with Image.open(icon_path) as im:
+                rgba = im.convert("RGBA")
+            size = rgba.size
+            return ctk.CTkImage(light_image=rgba, dark_image=rgba, size=size)
+        except Exception:
+            return None
 
     def _build_layout(self) -> None:
         self._build_menu_bar()
@@ -374,53 +387,82 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         controls = ctk.CTkFrame(left)
         controls.pack(fill="x", padx=8, pady=(0, 8))
 
-        controls_grid = ctk.CTkFrame(controls, fg_color="transparent")
-        controls_grid.pack(fill="x", padx=8, pady=(6, 8))
-        controls_grid.grid_columnconfigure(0, minsize=150)
-        controls_grid.grid_columnconfigure(1, minsize=150)
-        controls_grid.grid_columnconfigure(2, minsize=180)
-        controls_grid.grid_columnconfigure(3, minsize=180)
-        controls_grid.grid_columnconfigure(4, weight=1)
-        controls_grid.grid_columnconfigure(5, minsize=120)
+        controls_row = ctk.CTkFrame(controls, fg_color="transparent")
+        controls_row.pack(fill="x", padx=8, pady=(6, 8))
 
-        ctk.CTkButton(controls_grid, text="Refresh Songs", width=150, command=self.manual_refresh_songs).grid(row=0, column=0, padx=4, pady=6, sticky="w")
-        ctk.CTkButton(controls_grid, text="Convert Audio", width=150, command=self.convert_audio).grid(row=0, column=1, padx=4, pady=6, sticky="w")
-        ctk.CTkButton(controls_grid, text="Apply Poster To All", width=180, command=self.apply_poster_to_all).grid(row=0, column=2, padx=4, pady=6, sticky="w")
-        ctk.CTkButton(controls_grid, text="Apply Default To All", width=180, command=self.apply_default_to_all).grid(row=0, column=3, padx=4, pady=6, sticky="w")
+        btn_refresh = ctk.CTkButton(controls_row, text="\u21bb", width=40, command=self.manual_refresh_songs)
+        btn_refresh.pack(side="left", padx=(0, 6))
+        Tooltip(btn_refresh, "Refresh Songs")
 
-        ctk.CTkSwitch(
-            controls_grid,
-            text="All Cassette",
+        btn_convert = ctk.CTkButton(controls_row, text="\u21c4", width=40, command=self.convert_audio)
+        btn_convert.pack(side="left", padx=(0, 6))
+        Tooltip(btn_convert, "Convert Songs")
+
+        btn_poster = ctk.CTkButton(controls_row, text="\u25a7", width=40, command=self.apply_poster_to_all)
+        btn_poster.pack(side="left", padx=(0, 6))
+        Tooltip(btn_poster, "Apply Poster To All")
+
+        btn_default = ctk.CTkButton(controls_row, text="\u25a3", width=40, command=self.apply_default_to_all)
+        btn_default.pack(side="left", padx=(0, 6))
+        Tooltip(btn_default, "Apply Mod Default to All (Random Textures)")
+
+        cassette_switch_wrap = ctk.CTkFrame(controls_row, fg_color="transparent")
+        cassette_switch_wrap.pack(side="left", padx=(20, 8))
+        if self.cassette_switch_icon is not None:
+            ctk.CTkLabel(cassette_switch_wrap, text="", image=self.cassette_switch_icon).pack(side="left", padx=(0, 6))
+        else:
+            ctk.CTkLabel(cassette_switch_wrap, text="Cass").pack(side="left", padx=(0, 6))
+        self.bulk_cassette_switch = ctk.CTkSwitch(
+            cassette_switch_wrap,
+            text="",
+            width=44,
+            switch_width=36,
+            switch_height=18,
             variable=self.bulk_cassette_var,
             command=lambda: self.bulk_set("cassette", bool(self.bulk_cassette_var.get())),
-        ).grid(row=1, column=0, padx=8, pady=6, sticky="w")
-        ctk.CTkSwitch(
-            controls_grid,
-            text="All Vinyl",
+        )
+        self.bulk_cassette_switch.pack(side="left")
+        Tooltip(self.bulk_cassette_switch, "Toggle All Cassettes")
+
+        vinyl_switch_wrap = ctk.CTkFrame(controls_row, fg_color="transparent")
+        vinyl_switch_wrap.pack(side="left", padx=(0, 22))
+        if self.vinyl_switch_icon is not None:
+            ctk.CTkLabel(vinyl_switch_wrap, text="", image=self.vinyl_switch_icon).pack(side="left", padx=(0, 6))
+        else:
+            ctk.CTkLabel(vinyl_switch_wrap, text="Vinyl").pack(side="left", padx=(0, 6))
+        self.bulk_vinyl_switch = ctk.CTkSwitch(
+            vinyl_switch_wrap,
+            text="",
+            width=44,
+            switch_width=36,
+            switch_height=18,
             variable=self.bulk_vinyl_var,
             command=lambda: self.bulk_set("vinyl", bool(self.bulk_vinyl_var.get())),
-        ).grid(row=1, column=1, padx=8, pady=6, sticky="w")
+        )
+        self.bulk_vinyl_switch.pack(side="left")
+        Tooltip(self.bulk_vinyl_switch, "Toggle All Vinyls")
 
-        mask_cell = ctk.CTkFrame(controls_grid, fg_color="transparent", width=180, height=32)
-        mask_cell.grid(row=1, column=2, padx=4, pady=6, sticky="w")
-        mask_cell.grid_propagate(False)
-        ctk.CTkLabel(mask_cell, text="Vinyl Mask:").pack(side="left", padx=(0, 6))
         self.global_vinyl_mask_button = ctk.CTkButton(
-            mask_cell,
-            text="Inner",
-            width=110,
+            controls_row,
+            text="\u25cf Inner",
+            width=96,
             command=self.toggle_global_vinyl_mask,
         )
-        self.global_vinyl_mask_button.pack(side="right", padx=0)
+        self.global_vinyl_mask_button.pack(side="left", padx=(0, 6))
+        Tooltip(self.global_vinyl_mask_button, "Toggle Vinyl Mask")
 
-        ctk.CTkButton(controls_grid, text="Create Mix", width=180, command=self.open_song_builder_popup).grid(row=1, column=3, padx=4, pady=6, sticky="w")
-        self._refresh_global_vinyl_mask_button()
+        btn_mix = ctk.CTkButton(controls_row, text="\u266b Mixtape", width=104, command=self.open_song_builder_popup)
+        btn_mix.pack(side="left", padx=(0, 6))
+        Tooltip(btn_mix, "Create Mix")
+
         ctk.CTkButton(
-            controls_grid,
+            controls_row,
             text="Build",
+            width=96,
             command=self.build_pack,
             font=ctk.CTkFont(weight="bold"),
-        ).grid(row=0, column=5, rowspan=2, padx=4, pady=6, sticky="e")
+        ).pack(side="right", padx=(6, 0))
+        self._refresh_global_vinyl_mask_button()
 
         songs = ctk.CTkFrame(left)
         songs.pack(fill="both", expand=True, padx=8, pady=8)
@@ -497,9 +539,6 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         self.add_song_button = ctk.CTkButton(song_actions, text="+", width=34, height=34, command=self.add_song_files)
         self.add_song_button.pack(side="left")
         Tooltip(self.add_song_button, "Add Song(s)")
-        self.add_folder_button = ctk.CTkButton(song_actions, text="\U0001F4C1", width=34, height=34, command=self.add_song_folder)
-        self.add_folder_button.pack(side="left", padx=(6, 0))
-        Tooltip(self.add_folder_button, "Add Folder(s)")
         self.remove_song_button = ctk.CTkButton(song_actions, text="-", width=34, height=34, command=self.remove_selected_songs)
         self.remove_song_button.pack(side="left", padx=(6, 0))
         Tooltip(self.remove_song_button, "Remove Song")
@@ -540,10 +579,6 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         self.file_menu.add_command(label="Exit", command=self.on_close)
         self._refresh_recent_menu()
         self.menu_bar.add_cascade(label="File", menu=self.file_menu)
-        self.add_menu = tk.Menu(self.menu_bar, tearoff=0)
-        self.add_menu.add_command(label="Add Song(s)", command=self.add_song_files)
-        self.add_menu.add_command(label="Add Folder(s)", command=self.add_song_folder)
-        self.menu_bar.add_cascade(label="Add", menu=self.add_menu)
         self.menu_bar.add_command(label="Create Mix", command=self.open_song_builder_popup)
         self.configure(menu=self.menu_bar)
 
@@ -927,33 +962,6 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             self._move_song_to_bottom(name)
         self.status_var.set(f"Added {len(added_names)} song file(s)")
 
-    def add_song_folder(self) -> None:
-        selected = filedialog.askdirectory(
-            title="Add Folder(s)",
-            initialdir=str(self._audio_file_dialog_initial_dir()),
-            parent=self,
-        )
-        if not selected:
-            return
-        folder = Path(selected)
-        if not folder.exists() or not folder.is_dir():
-            return
-        allowed = {".ogg", ".mp3", ".wav", ".flac", ".m4a", ".aac", ".wma"}
-        files = sorted([p for p in folder.rglob("*") if p.is_file() and p.suffix.lower() in allowed], key=lambda p: (str(p.parent).lower(), p.name.lower()))
-        if not files:
-            self.status_var.set("No supported audio files found in folder")
-            return
-        added_names: list[str] = []
-        for f in files:
-            key = self._register_linked_song(f)
-            if key:
-                added_names.append(key)
-        self.last_song_pick_dir = folder.resolve()
-        self.refresh_songs()
-        for name in added_names:
-            self._move_song_to_bottom(name)
-        self.status_var.set(f"Added {len(added_names)} song(s) from folder(s)")
-
     def _move_selected_rows(self, direction: int) -> None:
         selected = list(self.tree.selection())
         if not selected:
@@ -1157,24 +1165,6 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             self.last_song_pick_dir = Path(selected[0]).resolve().parent
             redraw_files()
 
-        def add_source_folder() -> None:
-            selected = filedialog.askdirectory(
-                title="Add Folder(s)",
-                initialdir=str(self._audio_file_dialog_initial_dir()),
-                parent=popup,
-            )
-            if not selected:
-                return
-            folder = Path(selected)
-            if not folder.exists() or not folder.is_dir():
-                return
-            allowed = {".ogg", ".mp3", ".wav", ".flac", ".m4a", ".aac", ".wma"}
-            files = sorted([p for p in folder.rglob("*") if p.is_file() and p.suffix.lower() in allowed], key=lambda p: (str(p.parent).lower(), p.name.lower()))
-            for fp in files:
-                song_files.append(fp)
-            self.last_song_pick_dir = folder.resolve()
-            redraw_files()
-
         def remove_selected_files() -> None:
             selected_idx = [int(x) - 1 for x in files_tree.selection()]
             if not selected_idx:
@@ -1302,18 +1292,11 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         popup_file_menu.add_command(label="Save As", command=save_mix_as)
         popup_file_menu.add_command(label="Load", command=load_mix_file)
         popup_menu.add_cascade(label="File", menu=popup_file_menu)
-        popup_add_menu = tk.Menu(popup_menu, tearoff=0)
-        popup_add_menu.add_command(label="Add Song(s)", command=add_source_files)
-        popup_add_menu.add_command(label="Add Folder(s)", command=add_source_folder)
-        popup_menu.add_cascade(label="Add", menu=popup_add_menu)
         popup.configure(menu=popup_menu)
 
         add_btn = ctk.CTkButton(controls, text="+", width=34, height=34, command=add_source_files)
         add_btn.pack(side="left")
         Tooltip(add_btn, "Add Song(s)")
-        add_folder_btn = ctk.CTkButton(controls, text="\U0001F4C1", width=34, height=34, command=add_source_folder)
-        add_folder_btn.pack(side="left", padx=(6, 0))
-        Tooltip(add_folder_btn, "Add Folder(s)")
         remove_btn = ctk.CTkButton(controls, text="-", width=34, height=34, command=remove_selected_files)
         remove_btn.pack(side="left", padx=(6, 0))
         Tooltip(remove_btn, "Remove Song")
@@ -1326,15 +1309,18 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         clear_btn = ctk.CTkButton(controls, text="Clear", width=68, height=34, command=clear_files)
         clear_btn.pack(side="left", padx=(6, 0))
         Tooltip(clear_btn, "Clear List")
+        action_slot = ctk.CTkFrame(controls, fg_color="transparent")
+        action_slot.pack(side="right")
 
         build_msg_var = tk.StringVar(value="")
-        ctk.CTkLabel(frame, textvariable=build_msg_var, anchor="w").pack(fill="x", padx=8, pady=(0, 4))
-        progress = ctk.CTkProgressBar(frame, mode="determinate")
-        progress.pack(fill="x", padx=8, pady=(0, 12))
+        progress_wrap = ctk.CTkFrame(frame, fg_color="transparent")
+        progress_label = ctk.CTkLabel(progress_wrap, textvariable=build_msg_var, anchor="w")
+        progress_label.pack(fill="x")
+        progress = ctk.CTkProgressBar(progress_wrap, mode="determinate")
+        progress.pack(fill="x", pady=(2, 0))
         progress.set(0.0)
-
-        bottom = ctk.CTkFrame(frame, fg_color="transparent")
-        bottom.pack(fill="x", padx=8, pady=(0, 8))
+        progress_wrap.pack(fill="x", padx=8, pady=(0, 6))
+        progress_wrap.pack_forget()
 
         def stop_popup_preview() -> None:
             nonlocal popup_preview_proc
@@ -1419,6 +1405,10 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             stop_popup_preview()
             self._hide_hover_tip()
             save_last_mix_state()
+            try:
+                progress_wrap.pack_forget()
+            except Exception:
+                pass
             popup.destroy()
 
         popup.protocol("WM_DELETE_WINDOW", on_cancel)
@@ -1453,6 +1443,8 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             build_msg_var.set("Building (please wait)...")
             progress.configure(mode="determinate")
             progress.set(0.02)
+            if not progress_wrap.winfo_ismapped():
+                progress_wrap.pack(fill="x", padx=8, pady=(0, 6))
             btn_ok.configure(state="disabled")
             btn_cancel.configure(state="disabled")
 
@@ -1518,6 +1510,10 @@ class SimpleMoozicBuilderUI(ctk.CTk):
                         stop_pulse()
                         progress.set(0.0)
                         build_msg_var.set("")
+                        try:
+                            progress_wrap.pack_forget()
+                        except Exception:
+                            pass
                         build_in_progress["value"] = False
                         btn_ok.configure(state="normal")
                         btn_cancel.configure(state="normal")
@@ -1530,9 +1526,9 @@ class SimpleMoozicBuilderUI(ctk.CTk):
 
             threading.Thread(target=worker, daemon=True).start()
 
-        btn_cancel = ctk.CTkButton(bottom, text="Cancel", width=110, command=on_cancel)
+        btn_cancel = ctk.CTkButton(action_slot, text="Cancel", width=94, height=34, command=on_cancel)
         btn_cancel.pack(side="right")
-        btn_ok = ctk.CTkButton(bottom, text="Create", width=110, command=on_ok)
+        btn_ok = ctk.CTkButton(action_slot, text="Create", width=94, height=34, command=on_ok)
         btn_ok.pack(side="right", padx=(0, 8))
         load_last_mix_state()
 
@@ -2140,7 +2136,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         if not hasattr(self, "global_vinyl_mask_button"):
             return
         cur = (self.global_vinyl_mask_var.get() or "inside").strip().lower()
-        label = "Outer" if cur == "outside" else "Inner"
+        label = "\u25c9 Outer" if cur == "outside" else "\u25cf Inner"
         self.global_vinyl_mask_button.configure(text=label)
 
     def sort_by_column(self, col: str) -> None:
@@ -2196,14 +2192,14 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         self._redraw_tree()
         self.status_var.set("All songs set to mod default cover")
 
-    def convert_audio(self) -> None:
+    def convert_audio(self) -> bool:
         self.audio_dir_active = self._pick_active_audio_dir()
-        catalog = refresh_song_catalog(self.audio_dir_active)
-        total_sources = sum(1 for e in catalog if e.detail != "cache-only")
+        all_rows = list(self.track_rows)
+        total_sources = len(all_rows)
 
         if total_sources <= 0:
             self.status_var.set("No songs found to convert")
-            return
+            return True
 
         self.preview_title_label.configure(text="Converting Songs (Please Wait)...")
         self.build_progress_var.set(0.0)
@@ -2211,41 +2207,49 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         self.update_idletasks()
 
         processed = 0
+        seen_sources: set[str] = set()
 
-        def _on_progress(_entry) -> None:
+        def _on_progress(entry) -> None:
             nonlocal processed
             processed += 1
-            ogg_name = _entry.ogg.name if _entry and _entry.ogg else None
-            source_name = _entry.source.name if _entry and _entry.source else None
-            if ogg_name or source_name:
-                for row in self.track_rows:
-                    same_ogg = ogg_name and row["ogg"].name == ogg_name
-                    same_source = source_name and row["source"].name == source_name
-                    if same_ogg or same_source:
-                        row["status"] = "ready"
-                        row["detail"] = "up-to-date"
-                        break
-                self._redraw_tree()
+            src_resolved = str(entry.source.resolve()) if entry and entry.source else ""
+            for row in self.track_rows:
+                try:
+                    if str(row["source"].resolve()) == src_resolved:
+                        row["ogg"] = entry.ogg
+                        row["status"] = entry.status
+                        row["detail"] = entry.detail
+                except Exception:
+                    pass
+            self._redraw_tree()
             self.build_progress_var.set(max(0.0, min(1.0, processed / total_sources)))
             self.status_var.set(f"Converting songs... ({processed}/{total_sources})")
             self.update_idletasks()
 
         try:
-            summary = convert_audio_library(audio_dir=self.audio_dir_active, force=False, progress_cb=_on_progress)
+            for row in all_rows:
+                src = row["source"]
+                src_key = str(src.resolve())
+                if src_key in seen_sources:
+                    continue
+                seen_sources.add(src_key)
+                entry = convert_single_audio_file(src, self.audio_dir_active, force=False)
+                _on_progress(entry)
         except SystemExit as e:
             messagebox.showerror("Audio Conversion Error", str(e))
             self.status_var.set("Conversion failed")
-            return
+            return False
         except Exception as e:
             messagebox.showerror("Audio Conversion Error", str(e))
             self.status_var.set("Conversion failed")
-            return
+            return False
         finally:
             self.preview_title_label.configure(text="Build Preview")
 
         self.refresh_songs()
         self.build_progress_var.set(1.0)
         self.status_var.set("Converting Complete")
+        return True
 
     def _preflight(self) -> list[str]:
         errors: list[str] = []
@@ -2403,6 +2407,9 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         if errors:
             messagebox.showerror("Preflight failed", "\n".join(errors))
             self.status_var.set("Preflight failed")
+            return
+        if not self.convert_audio():
+            self.status_var.set("Build stopped: conversion failed")
             return
 
         for child in self.preview_scroll.winfo_children():
@@ -2562,6 +2569,15 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         try:
             shutil.copytree(source, target)
             self.status_var.set(f"Copied to Workshop: {target}")
+            try:
+                if sys.platform.startswith("win"):
+                    os.startfile(str(target))
+                elif sys.platform.startswith("darwin"):
+                    subprocess.Popen(["open", str(target)])
+                else:
+                    subprocess.Popen(["xdg-open", str(target)])
+            except Exception:
+                pass
         except Exception as e:
             messagebox.showerror("Copy to Workshop", str(e), parent=self)
 

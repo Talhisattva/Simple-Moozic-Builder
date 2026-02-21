@@ -16,6 +16,7 @@ Output structure is compatible with the True Moozic main mod contract:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import tempfile
 import random
@@ -67,7 +68,7 @@ AUDIO_SOURCE_EXTENSIONS = {
     ".aac",
     ".wma",
 }
-
+MIX_META_SUFFIX = ".smbmixmeta.json"
 
 def _safe_song_stem(name: str) -> str:
     stem = (name or "").strip()
@@ -617,6 +618,7 @@ def workshop_song_lines(oggs: list[Path], song_b_sides: Optional[dict[str, Path 
     b_map = song_b_sides or {}
     for ogg in oggs:
         a_side = display_name_from_file(ogg)
+        mix_tracks = _read_mix_metadata(ogg)
         b_raw = b_map.get(ogg.name)
         b_side_name = ""
         if b_raw:
@@ -626,11 +628,59 @@ def workshop_song_lines(oggs: list[Path], song_b_sides: Optional[dict[str, Path 
                     b_side_name = display_name_from_file(b_path)
             except Exception:
                 b_side_name = ""
+        line = f"[b]{a_side}[/b]"
+        if mix_tracks:
+            line += f" [i](Mixtape: {len(mix_tracks)} tracks)[/i]"
+        out.append(line)
         if b_side_name:
-            out.append(f"{a_side} | B-Side: {b_side_name}")
-        else:
-            out.append(a_side)
+            out.append(f"[i]B-Side: {b_side_name}[/i]")
+        if mix_tracks:
+            out.append("[table]")
+            out.append("[tr][th]#[/th][th]Track[/th][/tr]")
+            for idx, track in enumerate(mix_tracks, start=1):
+                out.append(f"[tr][td]{idx}[/td][td]{track}[/td][/tr]")
+            out.append("[/table]")
     return out
+
+
+def _mix_meta_path(ogg_path: Path) -> Path:
+    return ogg_path.with_suffix(MIX_META_SUFFIX)
+
+
+def _write_mix_metadata(ogg_path: Path, source_files: list[Path]) -> None:
+    payload = {
+        "type": "mixtape",
+        "tracks": [display_name_from_file(p) for p in source_files if p.exists() and p.is_file()],
+    }
+    try:
+        _mix_meta_path(ogg_path).write_text(json.dumps(payload, ensure_ascii=True, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _read_mix_metadata(ogg_path: Path) -> list[str]:
+    meta_path = _mix_meta_path(ogg_path)
+    if not meta_path.exists() or not meta_path.is_file():
+        return []
+    try:
+        raw = json.loads(meta_path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    tracks = raw.get("tracks") if isinstance(raw, dict) else None
+    if not isinstance(tracks, list):
+        return []
+    return [str(t).strip() for t in tracks if str(t).strip()]
+
+
+def _copy_ogg_with_mix_meta(src_ogg: Path, dst_ogg: Path) -> None:
+    shutil.copy2(src_ogg, dst_ogg)
+    src_meta = _mix_meta_path(src_ogg)
+    dst_meta = _mix_meta_path(dst_ogg)
+    if src_meta.exists() and src_meta.is_file():
+        try:
+            shutil.copy2(src_meta, dst_meta)
+        except Exception:
+            pass
 
 
 def audio_source_root(audio_dir: Path) -> Path:
@@ -1113,6 +1163,8 @@ def create_song_from_sources(
         shutil.copy2(out_path, cache_out)
     except Exception:
         pass
+    _write_mix_metadata(out_path, resolved_sources)
+    _write_mix_metadata(cache_out, resolved_sources)
     return out_path
 
 
@@ -2295,7 +2347,7 @@ def build_mixed_from_config(config: dict, on_track: Optional[Callable[[BuildTrac
             cassette_cache = tmp_root_path / "cassette" / "_ogg"
             cassette_cache.mkdir(parents=True, exist_ok=True)
             for p in cassette_oggs:
-                shutil.copy2(p, cassette_cache / p.name)
+                _copy_ogg_with_mix_meta(p, cassette_cache / p.name)
 
             cassette_cfg = dict(config)
             cassette_cfg.update(
@@ -2316,7 +2368,7 @@ def build_mixed_from_config(config: dict, on_track: Optional[Callable[[BuildTrac
             vinyl_cache = tmp_root_path / "vinyl" / "_ogg"
             vinyl_cache.mkdir(parents=True, exist_ok=True)
             for p in vinyl_oggs:
-                shutil.copy2(p, vinyl_cache / p.name)
+                _copy_ogg_with_mix_meta(p, vinyl_cache / p.name)
 
             vinyl_cfg = dict(config)
             vinyl_cfg.update(
@@ -2373,7 +2425,11 @@ def parse_args() -> argparse.Namespace:
     common.add_argument("--audio-dir", type=Path, default=default_audio_root(), help="Folder containing .ogg files")
     common.add_argument("--out-dir", type=Path, default=default_output_root(), help="Output folder")
     common.add_argument("--assets-root", type=Path, default=default_assets_root(), help="Path to builder assets folder")
-    common.add_argument("--parent-mod-id", default="TrueMoozic", help="Optional required parent mod id; leave blank for standalone")
+    common.add_argument(
+        "--parent-mod-id",
+        default="TrueMoozic",
+        help="Optional required parent mod id; leave blank for standalone",
+    )
     common.add_argument("--convert-audio", action="store_true", help="Convert supported audio into Conversions cache before build")
     common.add_argument("--force-rebuild-ogg", action="store_true", help="Force rebuild all cached OGG files")
 
