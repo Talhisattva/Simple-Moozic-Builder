@@ -106,13 +106,11 @@ def bootstrap_runtime_folders(base_dir: Optional[Path] = None) -> dict[str, Path
     legacy_cache = root / LEGACY_AUDIO_CACHE_FOLDER_NAME
     if (not any(audio_cache.iterdir())) and legacy_cache.exists() and legacy_cache.is_dir():
         audio_cache = legacy_cache
-    images = ensure(root / "Put your images here")
     output = ensure(root / "OUTPUT")
     return {
         "root": root,
         "audio": audio,
         "audio_cache": audio_cache,
-        "images": images,
         "output": output,
     }
 
@@ -2217,7 +2215,7 @@ def default_output_root() -> Path:
 
 
 def default_cover_root() -> Path:
-    return app_root() / "Put your images here"
+    return Path.home()
 
 
 def build_mod_from_config(config: dict, on_track: Optional[Callable[[BuildTrackEvent], None]] = None) -> Path:
