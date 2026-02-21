@@ -20,14 +20,18 @@ dist/
 
 # Local app state / projects
 .smb_last_state.json
+.smb_last_mix_state.json
 .smb_recent.json
 *.smbproj.json
+*.smbmix.json
 
 # Generated content
 OUTPUT/
+_ogg/
 Put your audio here/
 Put your audio here/_ogg/
 Put your .ogg audio here/
+Conversions/
 
 # Optional local binaries
 ffmpeg/
