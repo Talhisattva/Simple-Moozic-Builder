@@ -50,7 +50,7 @@ Then:
 ## Quick Start
 
 1. Start `simple_moozic_builder_ui.py` (or the packaged EXE from a release).
-2. Set your audio source and image source folders.
+2. Set your `.ogg Output` folder and add songs from your local files.
 3. Add songs to the table and choose Cassette/Vinyl per track.
 4. Set cover behavior (poster override or mod-default behavior).
 5. Build and inspect output.

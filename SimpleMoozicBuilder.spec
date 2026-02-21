@@ -22,6 +22,7 @@ extra_datas = [
     ("smb_icons", "smb_icons"),
     ("icon.ico", "."),
 ]
+extra_datas += _safe_collect_data("customtkinter")
 extra_datas += _safe_collect_data("soundfile")
 
 extra_bins = []
