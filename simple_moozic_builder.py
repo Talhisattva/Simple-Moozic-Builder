@@ -652,38 +652,80 @@ def write_workshop(root: Path, name: str, songs: Optional[list[str]] = None) -> 
     write(root / "workshop.txt", content)
 
 
+def _workshop_mix_table_lines(tracks: list[str]) -> list[str]:
+    out = ["[table]", "[tr][th]#[/th][th]Track[/th][/tr]"]
+    for idx, track in enumerate(tracks, start=1):
+        out.append(f"[tr][td]{idx}[/td][td]{track}[/td][/tr]")
+    out.append("[/table]")
+    return out
+
+
+def _workshop_mode_label(include_cassette: bool, include_vinyl: bool, is_mixtape: bool) -> str:
+    if include_cassette and include_vinyl:
+        base = "Cassette & Vinyl"
+    elif include_cassette:
+        base = "Cassette"
+    elif include_vinyl:
+        base = "Vinyl"
+    else:
+        return ""
+    if is_mixtape:
+        base = f"Mixtape {base}"
+    return f"[i]{base}[/i]"
+
+
 def workshop_song_lines(
     oggs: list[Path],
     song_b_sides: Optional[dict[str, Path | str]] = None,
     song_display_names: Optional[dict[str, str]] = None,
+    song_mode_labels: Optional[dict[str, str]] = None,
 ) -> list[str]:
     out: list[str] = []
     b_map = song_b_sides or {}
     d_map = song_display_names or {}
+    m_map = song_mode_labels or {}
     for ogg in oggs:
         a_side = str(d_map.get(ogg.name) or display_name_from_file(ogg))
-        mix_tracks = _read_mix_metadata(ogg)
-        b_raw = b_map.get(ogg.name)
+        a_mix_tracks = _read_mix_metadata(ogg)
+        mode_label = str(m_map.get(ogg.name) or "").strip()
+
         b_side_name = ""
+        b_mix_tracks: list[str] = []
+        b_raw = b_map.get(ogg.name)
         if b_raw:
             try:
                 b_path = Path(b_raw)
                 if b_path.exists() and b_path.is_file():
                     b_side_name = display_name_from_file(b_path)
+                    if b_path.suffix.lower() == ".ogg":
+                        b_mix_tracks = _read_mix_metadata(b_path)
             except Exception:
                 b_side_name = ""
-        line = f"[b]{a_side}[/b]"
-        if mix_tracks:
-            line += f" [i](Mixtape: {len(mix_tracks)} tracks)[/i]"
-        out.append(line)
+                b_mix_tracks = []
+
+        if not a_mix_tracks and not b_mix_tracks:
+            title_line = f"[b]{a_side}[/b]"
+            if mode_label:
+                title_line += f" {mode_label}"
+            out.append(title_line)
+            if b_side_name:
+                out.append(f"[i]B-Side: {b_side_name}[/i]")
+            continue
+
+        # Structured rendering when either side is a mixtape.
+        title_suffix: list[str] = []
+        if mode_label:
+            title_suffix.append(mode_label)
+        out.append(f"[b]{a_side}[/b]" + (f" {' '.join(title_suffix)}" if title_suffix else ""))
+        if a_mix_tracks:
+            out.append(f"[i]A-Side: {a_side}[/i]")
+            out.extend(_workshop_mix_table_lines(a_mix_tracks))
         if b_side_name:
-            out.append(f"[i]B-Side: {b_side_name}[/i]")
-        if mix_tracks:
-            out.append("[table]")
-            out.append("[tr][th]#[/th][th]Track[/th][/tr]")
-            for idx, track in enumerate(mix_tracks, start=1):
-                out.append(f"[tr][td]{idx}[/td][td]{track}[/td][/tr]")
-            out.append("[/table]")
+            if b_mix_tracks:
+                out.append(f"[i]B-Side: {b_side_name}[/i]")
+                out.extend(_workshop_mix_table_lines(b_mix_tracks))
+            else:
+                out.append(f"[i]B-Side: {b_side_name}[/i]")
     return out
 
 
@@ -1595,7 +1637,8 @@ def compose_record_with_mask_overlay(
 
 
 def build_cassette(args, on_track: Optional[Callable[[BuildTrackEvent], None]] = None) -> Path:
-    oggs = find_oggs(args.audio_dir)
+    ordered_oggs = [Path(p) for p in (getattr(args, "ordered_oggs", None) or [])]
+    oggs = [p for p in ordered_oggs if p.exists() and p.is_file() and p.suffix.lower() == ".ogg"] or find_oggs(args.audio_dir)
     if not oggs:
         raise SystemExit(f"No .ogg files found in: {args.audio_dir}")
     if args.custom_cassettes and (not getattr(args, "cover", None) or not args.cover.is_file()) and not getattr(args, "song_covers", None):
@@ -1620,6 +1663,7 @@ def build_cassette(args, on_track: Optional[Callable[[BuildTrackEvent], None]] =
             oggs,
             getattr(args, "song_b_sides", {}) or {},
             getattr(args, "song_display_names", {}) or {},
+            {ogg.name: _workshop_mode_label(True, False, bool(_read_mix_metadata(ogg))) for ogg in oggs},
         ),
     )
     write_workshop_images(
@@ -1861,7 +1905,8 @@ def build_cassette(args, on_track: Optional[Callable[[BuildTrackEvent], None]] =
 
 
 def build_vinyl(args, on_track: Optional[Callable[[BuildTrackEvent], None]] = None) -> Path:
-    oggs = find_oggs(args.audio_dir)
+    ordered_oggs = [Path(p) for p in (getattr(args, "ordered_oggs", None) or [])]
+    oggs = [p for p in ordered_oggs if p.exists() and p.is_file() and p.suffix.lower() == ".ogg"] or find_oggs(args.audio_dir)
     if not oggs:
         raise SystemExit(f"No .ogg files found in: {args.audio_dir}")
     if args.custom_vinyls and (not getattr(args, "cover", None) or not args.cover.is_file()):
@@ -1883,6 +1928,7 @@ def build_vinyl(args, on_track: Optional[Callable[[BuildTrackEvent], None]] = No
             oggs,
             getattr(args, "song_b_sides", {}) or {},
             getattr(args, "song_display_names", {}) or {},
+            {ogg.name: _workshop_mode_label(False, True, bool(_read_mix_metadata(ogg))) for ogg in oggs},
         ),
     )
     write_workshop_images(
@@ -2290,6 +2336,8 @@ def build_mod_from_config(config: dict, on_track: Optional[Callable[[BuildTrackE
         args.cover = Path(args.cover).resolve()
     if getattr(args, "song_covers", None):
         args.song_covers = {k: Path(v).resolve() for k, v in args.song_covers.items()}
+    if getattr(args, "ordered_oggs", None):
+        args.ordered_oggs = [Path(p).resolve() for p in args.ordered_oggs]
     args.parent_mod_id = str(getattr(args, "parent_mod_id", "TrueMoozic") or "").strip()
     args.standalone_bundle = bool(getattr(args, "standalone_bundle", False))
 
@@ -2317,6 +2365,8 @@ def build_mixed_from_config(config: dict, on_track: Optional[Callable[[BuildTrac
     track_modes = config.get("track_modes") or {}
     cassette_oggs: list[Path] = []
     vinyl_oggs: list[Path] = []
+    workshop_oggs: list[Path] = []
+    workshop_seen: set[str] = set()
     cassette_covers: dict[str, Path] = {}
     vinyl_covers: dict[str, Path] = {}
     cassette_b_sides: dict[str, Path] = {}
@@ -2326,6 +2376,9 @@ def build_mixed_from_config(config: dict, on_track: Optional[Callable[[BuildTrac
     vinyl_display_names: dict[str, str] = {}
     vinyl_use_random: set[str] = set()
     vinyl_placements: dict[str, str] = {}
+    workshop_b_sides: dict[str, Path] = {}
+    workshop_display_names: dict[str, str] = {}
+    workshop_mode_labels: dict[str, str] = {}
 
     for ogg_name, mode_cfg in track_modes.items():
         ogg_path = ogg_by_name.get(ogg_name)
@@ -2380,6 +2433,15 @@ def build_mixed_from_config(config: dict, on_track: Optional[Callable[[BuildTrac
             if display_name:
                 vinyl_display_names[ogg_name] = display_name
             vinyl_placements[ogg_name] = placement
+        if include_cassette or include_vinyl:
+            if ogg_name not in workshop_seen:
+                workshop_seen.add(ogg_name)
+                workshop_oggs.append(ogg_path)
+            workshop_mode_labels[ogg_name] = _workshop_mode_label(include_cassette, include_vinyl, bool(a_mix_tracks := _read_mix_metadata(ogg_path)))
+            if b_side:
+                workshop_b_sides[ogg_name] = Path(b_side)
+            if display_name:
+                workshop_display_names[ogg_name] = display_name
 
     if not cassette_oggs and not vinyl_oggs:
         raise SystemExit("No songs selected for cassette or vinyl build.")
@@ -2423,6 +2485,7 @@ def build_mixed_from_config(config: dict, on_track: Optional[Callable[[BuildTrac
                     "song_display_names": cassette_display_names,
                     "song_use_random_cassette": sorted(cassette_use_random),
                     "custom_cassettes": bool(cassette_covers),
+                    "ordered_oggs": cassette_oggs,
                 }
             )
             output_path = build_mod_from_config(cassette_cfg, on_track=make_wrapped_cb(emitted, "cassette"))
@@ -2446,12 +2509,26 @@ def build_mixed_from_config(config: dict, on_track: Optional[Callable[[BuildTrac
                     "song_use_random_vinyl": sorted(vinyl_use_random),
                     "song_vinyl_art_placement": vinyl_placements,
                     "custom_vinyls": bool(vinyl_covers),
+                    "ordered_oggs": vinyl_oggs,
                 }
             )
             output_path = build_mod_from_config(vinyl_cfg, on_track=make_wrapped_cb(emitted, "vinyl"))
 
     if output_path is None:
         raise SystemExit("Build failed to produce output path.")
+    # Mixed builds can run cassette and vinyl passes separately, each writing workshop.txt.
+    # Rewrite once with the combined selected song list so cassette-only or vinyl-only rows
+    # are not lost to the final pass overwrite.
+    write_workshop(
+        output_path,
+        str(config.get("name") or config.get("mod_id") or "Simple Moozic Builder Pack"),
+        workshop_song_lines(
+            workshop_oggs,
+            workshop_b_sides,
+            workshop_display_names,
+            workshop_mode_labels,
+        ),
+    )
     return output_path
 
 

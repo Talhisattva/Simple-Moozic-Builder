@@ -413,6 +413,12 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         btn_convert = ctk.CTkButton(controls_row, text="\u21c4", width=40, command=self.convert_audio)
         btn_convert.pack(side="left", padx=(0, 6))
         Tooltip(btn_convert, "Convert Songs")
+        btn_save = ctk.CTkButton(controls_row, text="\U0001F4BE", width=40, command=self.menu_save)
+        btn_save.pack(side="left", padx=(0, 6))
+        Tooltip(btn_save, "Save Project")
+        btn_load = ctk.CTkButton(controls_row, text="\U0001F4C1", width=40, command=self.menu_load)
+        btn_load.pack(side="left", padx=(0, 6))
+        Tooltip(btn_load, "Load Project")
 
         btn_poster = ctk.CTkButton(controls_row, text="\u25a7", width=40, command=self.apply_poster_to_all)
         btn_poster.pack(side="left", padx=(0, 6))
@@ -599,10 +605,18 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         self.configure(menu=self.menu_bar)
 
     def _bind_shortcuts(self) -> None:
+        self.bind_all("<Control-s>", self._on_ctrl_s, add="+")
+        self.bind_all("<Control-S>", self._on_ctrl_s, add="+")
+        self.bind_all("<Control-o>", self._on_ctrl_o, add="+")
+        self.bind_all("<Control-O>", self._on_ctrl_o, add="+")
         self.bind_all("<Control-KeyPress>", self._on_ctrl_keypress, add="+")
 
     def _on_ctrl_s(self, _event=None):
         self.menu_save()
+        return "break"
+
+    def _on_ctrl_o(self, _event=None):
+        self.menu_load()
         return "break"
 
     def _is_key(self, event, target_keycode: int, target_keysym: str) -> bool:
@@ -614,8 +628,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         if self._is_key(event, KEYCODE_S, "s"):
             return self._on_ctrl_s(event)
         if self._is_key(event, KEYCODE_O, "o"):
-            self.menu_load()
-            return "break"
+            return self._on_ctrl_o(event)
         return None
 
     def _on_tree_ctrl_key(self, event):
@@ -1310,6 +1323,19 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         popup_menu.add_cascade(label="File", menu=popup_file_menu)
         popup.configure(menu=popup_menu)
 
+        def _popup_ctrl_s(_event=None):
+            save_mix()
+            return "break"
+
+        def _popup_ctrl_o(_event=None):
+            load_mix_file()
+            return "break"
+
+        popup.bind("<Control-s>", _popup_ctrl_s, add="+")
+        popup.bind("<Control-S>", _popup_ctrl_s, add="+")
+        popup.bind("<Control-o>", _popup_ctrl_o, add="+")
+        popup.bind("<Control-O>", _popup_ctrl_o, add="+")
+
         add_btn = ctk.CTkButton(controls, text="+", width=34, height=34, command=add_source_files)
         add_btn.pack(side="left")
         Tooltip(add_btn, "Add Song(s)")
@@ -1322,6 +1348,12 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         down_btn = ctk.CTkButton(controls, text="\u2193", width=34, height=34, command=lambda: move_selected_files(1))
         down_btn.pack(side="left", padx=(6, 0))
         Tooltip(down_btn, "Move Down")
+        save_mix_btn = ctk.CTkButton(controls, text="\U0001F4BE", width=34, height=34, command=save_mix)
+        save_mix_btn.pack(side="left", padx=(6, 0))
+        Tooltip(save_mix_btn, "Save Mix")
+        load_mix_btn = ctk.CTkButton(controls, text="\U0001F4C1", width=34, height=34, command=load_mix_file)
+        load_mix_btn.pack(side="left", padx=(6, 0))
+        Tooltip(load_mix_btn, "Load Mix")
         clear_btn = ctk.CTkButton(controls, text="Clear", width=68, height=34, command=clear_files)
         clear_btn.pack(side="left", padx=(6, 0))
         Tooltip(clear_btn, "Clear List")
@@ -1629,6 +1661,8 @@ class SimpleMoozicBuilderUI(ctk.CTk):
 
     def refresh_songs(self) -> None:
         self.audio_dir_active = self._pick_active_audio_dir()
+        prev_order = [row["ogg"].name for row in self.track_rows]
+        prev_order_map = {name: idx for idx, name in enumerate(prev_order)}
         rows = refresh_song_catalog(self.audio_dir_active)
         row_map = {r.ogg.name: r for r in rows}
         _, cache_root = ensure_audio_workspace(self.audio_dir_active.resolve())
@@ -1643,6 +1677,14 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             status, detail = self._song_status_for_paths(src, ogg)
             row_map[key] = AudioTrackEntry(source=src, ogg=ogg, status=status, detail=detail)
         merged_rows = list(row_map.values())
+        if prev_order_map:
+            merged_rows.sort(
+                key=lambda r: (
+                    0 if r.ogg.name in prev_order_map else 1,
+                    prev_order_map.get(r.ogg.name, 10**9),
+                    r.source.name.lower(),
+                )
+            )
         all_keys = {r.ogg.name for r in merged_rows}
         if self.excluded_oggs:
             self.excluded_oggs = {k for k in self.excluded_oggs if k in all_keys}
@@ -1719,6 +1761,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         return selected
 
     def _redraw_tree(self) -> None:
+        prev_selected = [iid for iid in self.tree.selection() if iid]
         for iid in self.tree.get_children():
             self.tree.delete(iid)
         seen_iids: set[str] = set()
@@ -1761,6 +1804,13 @@ class SimpleMoozicBuilderUI(ctk.CTk):
                 tags=(tag,),
             )
             self.tree.set(key, "source", song_label)
+        if prev_selected:
+            keep = [iid for iid in prev_selected if self.tree.exists(iid)]
+            if keep:
+                try:
+                    self.tree.selection_set(keep)
+                except Exception:
+                    pass
         self._refresh_bulk_switches()
 
     def on_tree_select(self, _event=None) -> None:
@@ -2317,7 +2367,11 @@ class SimpleMoozicBuilderUI(ctk.CTk):
 
         track_modes: dict[str, dict] = {}
         row_by_key = {row["ogg"].name: row for row in self.track_rows}
-        for ogg_name, cfg in self.track_settings.items():
+        for row in self.track_rows:
+            ogg_name = row["ogg"].name
+            cfg = self.track_settings.get(ogg_name)
+            if cfg is None:
+                continue
             row = row_by_key.get(ogg_name)
             if row is None:
                 continue
