@@ -186,6 +186,15 @@ def write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+def _safe_console_print(*parts: object) -> None:
+    text = " ".join(str(p) for p in parts)
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        # Source-mode Windows consoles can be cp1252; avoid crashing builds on Unicode names.
+        print(text.encode("ascii", "backslashreplace").decode("ascii"))
+
+
 def copy_file_if_exists(src: Path, dst: Path) -> bool:
     if not src.exists() or not src.is_file():
         return False
@@ -1822,17 +1831,17 @@ def build_cassette(args, on_track: Optional[Callable[[BuildTrackEvent], None]] =
     write(paths["lua_shared"] / f"{args.mod_id}_MusicDefs.lua", "\n".join(musicdefs) + "\n")
 
     if cassette_assignments and not args.custom_cassettes:
-        print("")
-        print("Random Cassette Assignments")
-        print("---------------------------")
+        _safe_console_print("")
+        _safe_console_print("Random Cassette Assignments")
+        _safe_console_print("---------------------------")
         for idx, (name, tape_n) in enumerate(cassette_assignments, start=1):
-            print(f"{idx:>2}. {name}: tape {tape_n}")
+            _safe_console_print(f"{idx:>2}. {name}: tape {tape_n}")
     if cassette_assignments and args.custom_cassettes:
-        print("")
-        print("Custom Cassette Covers")
-        print("----------------------")
+        _safe_console_print("")
+        _safe_console_print("Custom Cassette Covers")
+        _safe_console_print("----------------------")
         for idx, (name, _) in enumerate(cassette_assignments, start=1):
-            print(f"{idx:>2}. {name}: generated from selected cover")
+            _safe_console_print(f"{idx:>2}. {name}: generated from selected cover")
 
     for im in cover_cache.values():
         try:
