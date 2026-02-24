@@ -1888,8 +1888,11 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             try:
                 cfg = self.track_settings.setdefault(row_id, {})
                 cfg["display_name"] = new_name
-                self._redraw_tree()
-                if row_id in self.tree.get_children():
+                if self.filter_var.get().strip():
+                    # Filtering can depend on display_name, so refresh when a filter is active.
+                    self._redraw_tree()
+                elif row_id in self.tree.get_children():
+                    self.tree.set(row_id, "source", new_name)
                     self.tree.selection_set(row_id)
                 self.status_var.set(f"Updated display name: {new_name}")
             except Exception as e:
