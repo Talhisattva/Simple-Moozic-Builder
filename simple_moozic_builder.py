@@ -16,6 +16,7 @@ Output structure is compatible with the True Moozic main mod contract:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import tempfile
@@ -139,6 +140,37 @@ def sanitize_id(value: str) -> str:
     if not base:
         base = "Track"
     return base[:48]
+
+
+def unique_sanitize_id(value: str, used_ids: set[str]) -> str:
+    stem = Path(value).stem
+    raw_base = unicodedata.normalize("NFD", stem)
+    raw_base = "".join(ch for ch in raw_base if unicodedata.category(ch) != "Mn")
+    raw_base = re.sub(r"[^A-Za-z0-9]", "", raw_base)
+    base = sanitize_id(value)
+    needs_suffix = (raw_base == "")
+    if (not needs_suffix) and base not in used_ids:
+        used_ids.add(base)
+        return base
+
+    # Deterministic, ASCII-safe suffix so non-Latin names and collisions remain stable.
+    digest = hashlib.sha1(stem.encode("utf-8")).hexdigest().upper()[:6]
+    max_base_len = max(1, 48 - 1 - len(digest))
+    candidate = f"{base[:max_base_len]}_{digest}"
+    if candidate not in used_ids:
+        used_ids.add(candidate)
+        return candidate
+
+    # Extremely unlikely fallback if hash collides too.
+    n = 2
+    while True:
+        suffix = f"_{digest}{n}"
+        max_base_len = max(1, 48 - len(suffix))
+        candidate = f"{base[:max_base_len]}{suffix}"
+        if candidate not in used_ids:
+            used_ids.add(candidate)
+            return candidate
+        n += 1
 
 
 def display_name_from_file(path: Path) -> str:
@@ -1612,8 +1644,9 @@ def build_cassette(args, on_track: Optional[Callable[[BuildTrackEvent], None]] =
     song_b_sides = getattr(args, "song_b_sides", {}) or {}
     song_use_random_cassette = set(getattr(args, "song_use_random_cassette", []) or [])
     total_tracks = len(oggs)
+    used_item_ids: set[str] = set()
     for idx, ogg in enumerate(oggs, start=1):
-        iid = sanitize_id(ogg.name)
+        iid = unique_sanitize_id(ogg.name, used_item_ids)
         disp = display_name_from_file(ogg)
         icon = ""
         model_name = ""
@@ -1932,8 +1965,9 @@ def build_vinyl(args, on_track: Optional[Callable[[BuildTrackEvent], None]] = No
 
     song_b_sides = getattr(args, "song_b_sides", {}) or {}
     total_tracks = len(oggs)
+    used_item_ids: set[str] = set()
     for idx, ogg in enumerate(oggs, start=1):
-        iid = sanitize_id(ogg.name)
+        iid = unique_sanitize_id(ogg.name, used_item_ids)
         disp = display_name_from_file(ogg)
         thumb_path: Optional[Path] = None
         use_random_for_song = (not args.custom_vinyls) or (ogg.name in song_use_random_vinyl)
