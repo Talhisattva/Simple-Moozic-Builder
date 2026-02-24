@@ -643,11 +643,16 @@ def write_workshop(root: Path, name: str, songs: Optional[list[str]] = None) -> 
     write(root / "workshop.txt", content)
 
 
-def workshop_song_lines(oggs: list[Path], song_b_sides: Optional[dict[str, Path | str]] = None) -> list[str]:
+def workshop_song_lines(
+    oggs: list[Path],
+    song_b_sides: Optional[dict[str, Path | str]] = None,
+    song_display_names: Optional[dict[str, str]] = None,
+) -> list[str]:
     out: list[str] = []
     b_map = song_b_sides or {}
+    d_map = song_display_names or {}
     for ogg in oggs:
-        a_side = display_name_from_file(ogg)
+        a_side = str(d_map.get(ogg.name) or display_name_from_file(ogg))
         mix_tracks = _read_mix_metadata(ogg)
         b_raw = b_map.get(ogg.name)
         b_side_name = ""
@@ -1602,7 +1607,11 @@ def build_cassette(args, on_track: Optional[Callable[[BuildTrackEvent], None]] =
     write_workshop(
         paths["root"],
         args.name,
-        workshop_song_lines(oggs, getattr(args, "song_b_sides", {}) or {}),
+        workshop_song_lines(
+            oggs,
+            getattr(args, "song_b_sides", {}) or {},
+            getattr(args, "song_display_names", {}) or {},
+        ),
     )
     write_workshop_images(
         paths,
@@ -1642,12 +1651,13 @@ def build_cassette(args, on_track: Optional[Callable[[BuildTrackEvent], None]] =
         t_world_overlay = Image.open(tpl_dir / "TMCassette_Overlay.png") if (tpl_dir / "TMCassette_Overlay.png").exists() else None
 
     song_b_sides = getattr(args, "song_b_sides", {}) or {}
+    song_display_names = getattr(args, "song_display_names", {}) or {}
     song_use_random_cassette = set(getattr(args, "song_use_random_cassette", []) or [])
     total_tracks = len(oggs)
     used_item_ids: set[str] = set()
     for idx, ogg in enumerate(oggs, start=1):
         iid = unique_sanitize_id(ogg.name, used_item_ids)
-        disp = display_name_from_file(ogg)
+        disp = str(song_display_names.get(ogg.name) or display_name_from_file(ogg))
         icon = ""
         model_name = ""
         thumb_path: Optional[Path] = None
@@ -1860,7 +1870,11 @@ def build_vinyl(args, on_track: Optional[Callable[[BuildTrackEvent], None]] = No
     write_workshop(
         paths["root"],
         args.name,
-        workshop_song_lines(oggs, getattr(args, "song_b_sides", {}) or {}),
+        workshop_song_lines(
+            oggs,
+            getattr(args, "song_b_sides", {}) or {},
+            getattr(args, "song_display_names", {}) or {},
+        ),
     )
     write_workshop_images(
         paths,
@@ -1964,11 +1978,12 @@ def build_vinyl(args, on_track: Optional[Callable[[BuildTrackEvent], None]] = No
     random_assignments: list[tuple[str, int, int]] = []
 
     song_b_sides = getattr(args, "song_b_sides", {}) or {}
+    song_display_names = getattr(args, "song_display_names", {}) or {}
     total_tracks = len(oggs)
     used_item_ids: set[str] = set()
     for idx, ogg in enumerate(oggs, start=1):
         iid = unique_sanitize_id(ogg.name, used_item_ids)
-        disp = display_name_from_file(ogg)
+        disp = str(song_display_names.get(ogg.name) or display_name_from_file(ogg))
         thumb_path: Optional[Path] = None
         use_random_for_song = (not args.custom_vinyls) or (ogg.name in song_use_random_vinyl)
         side_b_path = None
@@ -2296,8 +2311,10 @@ def build_mixed_from_config(config: dict, on_track: Optional[Callable[[BuildTrac
     cassette_covers: dict[str, Path] = {}
     vinyl_covers: dict[str, Path] = {}
     cassette_b_sides: dict[str, Path] = {}
+    cassette_display_names: dict[str, str] = {}
     cassette_use_random: set[str] = set()
     vinyl_b_sides: dict[str, Path] = {}
+    vinyl_display_names: dict[str, str] = {}
     vinyl_use_random: set[str] = set()
     vinyl_placements: dict[str, str] = {}
 
@@ -2330,6 +2347,7 @@ def build_mixed_from_config(config: dict, on_track: Optional[Callable[[BuildTrac
         include_vinyl = bool(mode_cfg.get("vinyl", False))
         cover = mode_cfg.get("cover")
         b_side = mode_cfg.get("b_side")
+        display_name = str(mode_cfg.get("display_name") or "").strip()
         placement = _parse_vinyl_art_placement(mode_cfg.get("vinyl_art_placement", "inside"), default="inside")
 
         if include_cassette:
@@ -2340,6 +2358,8 @@ def build_mixed_from_config(config: dict, on_track: Optional[Callable[[BuildTrac
                 cassette_use_random.add(ogg_name)
             if b_side:
                 cassette_b_sides[ogg_name] = Path(b_side)
+            if display_name:
+                cassette_display_names[ogg_name] = display_name
         if include_vinyl:
             vinyl_oggs.append(ogg_path)
             if cover:
@@ -2348,6 +2368,8 @@ def build_mixed_from_config(config: dict, on_track: Optional[Callable[[BuildTrac
                 vinyl_use_random.add(ogg_name)
             if b_side:
                 vinyl_b_sides[ogg_name] = Path(b_side)
+            if display_name:
+                vinyl_display_names[ogg_name] = display_name
             vinyl_placements[ogg_name] = placement
 
     if not cassette_oggs and not vinyl_oggs:
@@ -2389,6 +2411,7 @@ def build_mixed_from_config(config: dict, on_track: Optional[Callable[[BuildTrac
                     "cover": fallback_cover,
                     "song_covers": cassette_covers,
                     "song_b_sides": cassette_b_sides,
+                    "song_display_names": cassette_display_names,
                     "song_use_random_cassette": sorted(cassette_use_random),
                     "custom_cassettes": bool(cassette_covers),
                 }
@@ -2410,6 +2433,7 @@ def build_mixed_from_config(config: dict, on_track: Optional[Callable[[BuildTrac
                     "cover": fallback_cover,
                     "song_covers": vinyl_covers,
                     "song_b_sides": vinyl_b_sides,
+                    "song_display_names": vinyl_display_names,
                     "song_use_random_vinyl": sorted(vinyl_use_random),
                     "song_vinyl_art_placement": vinyl_placements,
                     "custom_vinyls": bool(vinyl_covers),

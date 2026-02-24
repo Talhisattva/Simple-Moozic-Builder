@@ -47,7 +47,6 @@ from simple_moozic_builder import (
     locate_ffplay,
     render_workshop_square_image,
     refresh_song_catalog,
-    rename_song_asset,
     ensure_audio_workspace,
 )
 
@@ -1664,6 +1663,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
                     "vinyl": True,
                     "cover": None,
                     "b_side": None,
+                    "display_name": None,
                     "vinyl_art_placement": self.global_vinyl_mask_var.get(),
                     "source_path": str(row["source"]),
                     "cached_ogg_path": str(row["ogg"]),
@@ -1703,7 +1703,8 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             return list(self.track_rows)
         visible: list[dict] = []
         for row in self.track_rows:
-            song = row["source"].name
+            cfg = self.track_settings.get(row["ogg"].name, {})
+            song = str(cfg.get("display_name") or row["source"].name)
             if self._fuzzy_match(song, q):
                 visible.append(row)
         return visible
@@ -1727,6 +1728,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
                 continue
             seen_iids.add(key)
             cfg = self.track_settings.get(key, {})
+            song_label = str(cfg.get("display_name") or (row["ogg"].name if row["ogg"].exists() else row["source"].name))
             cover = cfg.get("cover")
             if cover:
                 cover_path = Path(cover)
@@ -1748,6 +1750,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
                 iid=key,
                 values=(
                     row["ogg"].name if row["ogg"].exists() else row["source"].name,
+                    # source column is editable display label, not source-file rename
                     "\U0001F50A",
                     row["status"],
                     "\u2713" if cfg.get("cassette") else "",
@@ -1757,6 +1760,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
                 ),
                 tags=(tag,),
             )
+            self.tree.set(key, "source", song_label)
         self._refresh_bulk_switches()
 
     def on_tree_select(self, _event=None) -> None:
@@ -1853,7 +1857,8 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         current_row = next((r for r in self.track_rows if r["ogg"].name == row_id), None)
         if not current_row:
             return
-        current_name = current_row["source"].stem
+        cfg = self.track_settings.get(row_id, {})
+        current_name = str(cfg.get("display_name") or current_row["source"].stem)
         bbox = self.tree.bbox(row_id, "#1")
         if not bbox:
             return
@@ -1882,43 +1887,19 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             if not new_name or new_name == current_name:
                 return "break"
             try:
-                src_root, cache_root = ensure_audio_workspace(self.audio_dir_active.resolve())
-                out_stem = _safe_song_stem(new_name)
-                current_row_local = next((r for r in self.track_rows if r["ogg"].name == row_id), None)
-                source_suffix = current_row_local["source"].suffix if current_row_local else ".ogg"
-                source_target_exists = (src_root / f"{out_stem}{source_suffix}").exists()
-                ogg_target_exists = (cache_root / f"{out_stem}.ogg").exists()
-                overwrite_existing = False
-                if source_target_exists or ogg_target_exists:
-                    overwrite_existing = bool(
-                        messagebox.askyesno(
-                            "Overwrite Existing Song",
-                            f"A song named '{out_stem}' already exists.\n\nOverwrite it?",
-                            parent=self,
-                        )
-                    )
-                    if not overwrite_existing:
-                        return "break"
-                new_ogg = rename_song_asset(
-                    row_id,
-                    new_name,
-                    self.audio_dir_active,
-                    overwrite_existing=overwrite_existing,
-                )
-                cfg = self.track_settings.pop(row_id, None)
-                if cfg is not None:
-                    self.track_settings[new_ogg] = cfg
-                self.refresh_songs()
-                if new_ogg in self.tree.get_children():
-                    self.tree.selection_set(new_ogg)
-                self.status_var.set(f"Renamed song to: {new_name}")
+                cfg = self.track_settings.setdefault(row_id, {})
+                cfg["display_name"] = new_name
+                self._redraw_tree()
+                if row_id in self.tree.get_children():
+                    self.tree.selection_set(row_id)
+                self.status_var.set(f"Updated display name: {new_name}")
             except Exception as e:
                 messagebox.showerror("Rename failed", str(e))
             return "break"
 
         editor.bind("<Return>", _commit)
         editor.bind("<Escape>", _cancel)
-        editor.bind("<FocusOut>", _commit)
+        editor.bind("<FocusOut>", _cancel)
 
     def _start_audio_preview(self, audio_path: Path) -> object | None:
         if self.preview_backend == "miniaudio" and miniaudio is not None:
