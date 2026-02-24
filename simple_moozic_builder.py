@@ -148,7 +148,7 @@ def unique_sanitize_id(value: str, used_ids: set[str]) -> str:
     raw_base = "".join(ch for ch in raw_base if unicodedata.category(ch) != "Mn")
     raw_base = re.sub(r"[^A-Za-z0-9]", "", raw_base)
     base = sanitize_id(value)
-    needs_suffix = (raw_base == "")
+    needs_suffix = (raw_base == "") or raw_base.isdigit()
     if (not needs_suffix) and base not in used_ids:
         used_ids.add(base)
         return base
