@@ -2211,14 +2211,14 @@ def build_vinyl(args, on_track: Optional[Callable[[BuildTrackEvent], None]] = No
     write(paths["lua_shared"] / f"{args.mod_id}_MusicDefs_Vinyl.lua", "\n".join(musicdefs) + "\n")
 
     if random_assignments:
-        print("")
-        print("Random Vinyl Assignments")
-        print("------------------------")
+        _safe_console_print("")
+        _safe_console_print("Random Vinyl Assignments")
+        _safe_console_print("------------------------")
         for idx, (name, rec_n, alb_n) in enumerate(random_assignments, start=1):
-            print(f"{idx:>2}. {name}: record {rec_n}, album {alb_n}")
+            _safe_console_print(f"{idx:>2}. {name}: record {rec_n}, album {alb_n}")
     if args.custom_vinyls and any(name not in song_use_random_vinyl for name in [p.name for p in oggs]):
-        print("")
-        print(f"Custom Vinyl Art Placement: {vinyl_art_placement}")
+        _safe_console_print("")
+        _safe_console_print(f"Custom Vinyl Art Placement: {vinyl_art_placement}")
 
     for im in cover_cache.values():
         try:
