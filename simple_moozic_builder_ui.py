@@ -1879,10 +1879,9 @@ class SimpleMoozicBuilderUI(ctk.CTk):
                 self.inline_editor = None
             return "break"
 
-        def _commit(_event=None):
-            if self.inline_editor is None:
+        def _commit_impl(editor_ref: tk.Entry, new_name: str):
+            if self.inline_editor is not editor_ref:
                 return "break"
-            new_name = self.inline_editor.get().strip()
             _cancel()
             if not new_name or new_name == current_name:
                 return "break"
@@ -1897,9 +1896,39 @@ class SimpleMoozicBuilderUI(ctk.CTk):
                 messagebox.showerror("Rename failed", str(e))
             return "break"
 
+        def _commit(_event=None):
+            if self.inline_editor is None:
+                return "break"
+            editor_ref = self.inline_editor
+            try:
+                new_name = editor_ref.get().strip()
+            except Exception:
+                return "break"
+            return _commit_impl(editor_ref, new_name)
+
+        def _commit_on_focus_out(_event=None):
+            # Defer commit until after Tk finishes the focus transition. This avoids
+            # tearing down/rebuilding widgets inside the FocusOut callback (IME/Tk crash risk).
+            if self.inline_editor is None:
+                return "break"
+            editor_ref = self.inline_editor
+            try:
+                pending_name = editor_ref.get().strip()
+            except Exception:
+                return "break"
+
+            def _deferred():
+                try:
+                    _commit_impl(editor_ref, pending_name)
+                except Exception:
+                    pass
+
+            self.after(1, _deferred)
+            return "break"
+
         editor.bind("<Return>", _commit)
         editor.bind("<Escape>", _cancel)
-        editor.bind("<FocusOut>", _cancel)
+        editor.bind("<FocusOut>", _commit_on_focus_out)
 
     def _start_audio_preview(self, audio_path: Path) -> object | None:
         if self.preview_backend == "miniaudio" and miniaudio is not None:
