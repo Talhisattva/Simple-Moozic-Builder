@@ -291,6 +291,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
         self.build_progress_var = tk.DoubleVar(value=0.0)
 
         self.sort_state: dict[str, bool] = {}
+        self._native_dialog_active = False
 
         self._load_recent_projects()
         self._build_layout()
@@ -1855,36 +1856,63 @@ class SimpleMoozicBuilderUI(ctk.CTk):
             return "break"
 
         if action == "bside":
-            selected = filedialog.askopenfilename(
-                title="Select B-Side audio",
-                initialdir=str(self._audio_file_dialog_initial_dir()),
-                filetypes=[("Audio", "*.ogg *.mp3 *.wav *.flac *.m4a *.aac *.wma"), ("All files", "*.*")],
-                parent=self,
-            )
-            if selected:
-                self.last_song_pick_dir = Path(selected).resolve().parent
-                for key in selected_rows:
-                    self.track_settings.setdefault(key, {})["b_side"] = str(Path(selected))
-                self._redraw_tree()
-                self._update_selection_status_hint()
+            row_keys = list(selected_rows)
+
+            def _pick_bside():
+                selected = filedialog.askopenfilename(
+                    title="Select B-Side audio",
+                    initialdir=str(self._audio_file_dialog_initial_dir()),
+                    filetypes=[("Audio", "*.ogg *.mp3 *.wav *.flac *.m4a *.aac *.wma"), ("All files", "*.*")],
+                    parent=self,
+                )
+                if selected:
+                    self.last_song_pick_dir = Path(selected).resolve().parent
+                    for key in row_keys:
+                        self.track_settings.setdefault(key, {})["b_side"] = str(Path(selected))
+                    self._redraw_tree()
+                    self._update_selection_status_hint()
+
+            self._defer_native_dialog(_pick_bside)
             return "break"
 
         if action == "cover":
-            selected = filedialog.askopenfilename(
-                title="Select song cover",
-                initialdir=str(self._image_file_dialog_initial_dir()),
-                filetypes=[("Images", "*.png;*.jpg;*.jpeg;*.webp;*.bmp")],
-                parent=self,
-            )
-            if selected:
-                self.last_image_pick_dir = Path(selected).resolve().parent
-                for key in selected_rows:
-                    self.track_settings.setdefault(key, {})["cover"] = str(Path(selected))
-                self._redraw_tree()
-                self._update_selection_status_hint()
+            row_keys = list(selected_rows)
+
+            def _pick_cover():
+                selected = filedialog.askopenfilename(
+                    title="Select song cover",
+                    initialdir=str(self._image_file_dialog_initial_dir()),
+                    filetypes=[("Images", "*.png;*.jpg;*.jpeg;*.webp;*.bmp")],
+                    parent=self,
+                )
+                if selected:
+                    self.last_image_pick_dir = Path(selected).resolve().parent
+                    for key in row_keys:
+                        self.track_settings.setdefault(key, {})["cover"] = str(Path(selected))
+                    self._redraw_tree()
+                    self._update_selection_status_hint()
+
+            self._defer_native_dialog(_pick_cover)
             return "break"
 
         return None
+
+    def _defer_native_dialog(self, fn) -> None:
+        # Native dialogs opened directly from Treeview click handlers can crash on some
+        # Windows Tk states; defer one tick to exit the event callback first.
+        if self._native_dialog_active:
+            return
+
+        def _run():
+            if self._native_dialog_active:
+                return
+            self._native_dialog_active = True
+            try:
+                fn()
+            finally:
+                self._native_dialog_active = False
+
+        self.after(1, _run)
 
     def on_tree_double_click(self, event) -> str | None:
         region = self.tree.identify("region", event.x, event.y)
