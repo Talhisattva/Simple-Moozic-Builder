@@ -1722,6 +1722,7 @@ def build_cassette(args, on_track: Optional[Callable[[BuildTrackEvent], None]] =
             if cand.exists() and cand.is_file():
                 side_b_path = cand.resolve()
                 shutil.copy2(side_b_path, paths["sound"] / side_b_path.name)
+        cassette_display_name = f"Cassette {disp} (A-Side)" if side_b_path is not None else f"Cassette {disp}"
         if not use_random_for_song:
             cover_path = args.cover
             if getattr(args, "song_covers", None):
@@ -1808,7 +1809,7 @@ def build_cassette(args, on_track: Optional[Callable[[BuildTrackEvent], None]] =
                 "\t\tDisplayCategory = Entertainment,",
                 "\t\tWeight\t\t\t=\t0.02,",
                 f"\t\tIcon\t\t\t=\t{icon},",
-                f"\t\tDisplayName\t\t=\tCassette {disp} (A-Side),",
+                f"\t\tDisplayName\t\t=\t{cassette_display_name},",
                 f"\t\tWorldStaticModel = {args.mod_id}.{model_name},",
                 "\t\tCanSpawn\t\t=\ttrue,",
                 "\t}",
