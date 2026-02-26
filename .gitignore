@@ -41,6 +41,7 @@ icon16.png
 icon48.png
 icon256.png
 launch_simple_moozic_builder.bat
+push_release*.ps1
 
 # Temporary files
 *.tmp
