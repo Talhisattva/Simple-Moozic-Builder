@@ -1260,6 +1260,10 @@ def convert_single_audio_file(source_file: Path, audio_dir: Path, force: bool = 
     if not src.exists() or not src.is_file():
         raise SystemExit(f"Source file not found: {src}")
 
+    # Native .ogg sources should be used in place; avoid duplicating them into _ogg.
+    if src.suffix.lower() == ".ogg":
+        return AudioTrackEntry(source=src, ogg=src, status="ready", detail="source ogg")
+
     backend_mode = _audio_backend_mode()
     prefer_soundfile = backend_mode != "ffmpeg"
     ffmpeg = _locate_ffmpeg()
@@ -1267,11 +1271,6 @@ def convert_single_audio_file(source_file: Path, audio_dir: Path, force: bool = 
     up_to_date = target.exists() and target.stat().st_mtime >= src.stat().st_mtime
     if not force and up_to_date:
         return AudioTrackEntry(source=src, ogg=target, status="ready", detail="up-to-date")
-
-    if src.suffix.lower() == ".ogg":
-        if src.resolve() != target.resolve():
-            shutil.copy2(src, target)
-        return AudioTrackEntry(source=src, ogg=target, status="ready", detail="copied")
 
     if prefer_soundfile and _soundfile_backend_ready():
         try:

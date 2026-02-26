@@ -593,6 +593,8 @@ class SimpleMoozicBuilderUI(ctk.CTk):
     def _build_menu_bar(self) -> None:
         self.menu_bar = tk.Menu(self)
         self.file_menu = tk.Menu(self.menu_bar, tearoff=0)
+        self.file_menu.add_command(label="New", command=self.clear_preview)
+        self.file_menu.add_separator()
         self.file_menu.add_command(label="Save", accelerator="Ctrl+S", command=self.menu_save)
         self.file_menu.add_command(label="Load", accelerator="Ctrl+O", command=self.menu_load)
         self.file_menu.add_command(label="Save As", command=self.menu_save_as)
@@ -2559,7 +2561,7 @@ class SimpleMoozicBuilderUI(ctk.CTk):
     def clear_preview(self) -> None:
         confirm = messagebox.askyesno(
             "Clear Session",
-            "Clear current builder state, preview, and saved last-session memory?",
+            "Start a new project?\n\nClear last-save state and reset inputs to defaults?",
         )
         if not confirm:
             return
