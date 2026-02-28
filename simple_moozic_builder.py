@@ -674,17 +674,18 @@ def _workshop_mode_label(include_cassette: bool, include_vinyl: bool, is_mixtape
     return f"[i]{base}[/i]"
 
 
-def _pz_script_str(value: str) -> str:
-    # PZ script fields are comma-delimited; quote user-controlled strings so commas
-    # in song names / filenames do not corrupt script parsing.
-    s = str(value).replace("\\", "\\\\").replace('"', '\\"')
-    return f'"{s}"'
-
-
 def _pz_safe_display_text(value: str) -> str:
     # PZ script parsers are fragile with literal ASCII commas in item fields.
     # Normalize commas to " - " and collapse whitespace for readability.
     return " ".join(str(value).replace(",", " - ").split())
+
+
+def _safe_audio_output_name(track_key: str, side_b: bool = False) -> str:
+    stem = Path(track_key).stem
+    base = sanitize_id(track_key)
+    digest = hashlib.sha1(stem.encode("utf-8")).hexdigest().upper()[:6]
+    suffix = "_SideB" if side_b else ""
+    return f"{base}_{digest}{suffix}.ogg"
 
 
 def workshop_song_lines(
@@ -1735,7 +1736,7 @@ def build_cassette(args, on_track: Optional[Callable[[BuildTrackEvent], None]] =
             cand = Path(raw_b)
             if cand.exists() and cand.is_file():
                 side_b_path = cand.resolve()
-                side_b_out_name = f"Cassette{iid}SideB.ogg"
+                side_b_out_name = _safe_audio_output_name(ogg.name, side_b=True)
                 shutil.copy2(side_b_path, paths["sound"] / side_b_out_name)
         cassette_display_name = (
             f"Cassette {disp_script} (A-Side)" if side_b_path is not None else f"Cassette {disp_script}"
@@ -1801,7 +1802,7 @@ def build_cassette(args, on_track: Optional[Callable[[BuildTrackEvent], None]] =
             if candidate_thumb.exists():
                 thumb_path = candidate_thumb
 
-        ogg_out_name = f"Cassette{iid}.ogg"
+        ogg_out_name = _safe_audio_output_name(ogg.name)
         shutil.copy2(ogg, paths["sound"] / ogg_out_name)
 
         sounds.extend(
@@ -1827,7 +1828,7 @@ def build_cassette(args, on_track: Optional[Callable[[BuildTrackEvent], None]] =
                 "\t\tDisplayCategory = Entertainment,",
                 "\t\tWeight\t\t\t=\t0.02,",
                 f"\t\tIcon\t\t\t=\t{icon},",
-                f"\t\tDisplayName\t\t=\t{_pz_script_str(cassette_display_name)},",
+                f"\t\tDisplayName\t\t=\t{cassette_display_name},",
                 f"\t\tWorldStaticModel = {args.mod_id}.{model_name},",
                 "\t\tCanSpawn\t\t=\ttrue,",
                 "\t}",
@@ -1859,7 +1860,7 @@ def build_cassette(args, on_track: Optional[Callable[[BuildTrackEvent], None]] =
                     "\t\tDisplayCategory = Entertainment,",
                     "\t\tWeight\t\t\t=\t0.02,",
                     f"\t\tIcon\t\t\t=\t{icon},",
-                    f"\t\tDisplayName\t\t=\t{_pz_script_str(f'Cassette {disp_script} (B-Side)')},",
+                    f"\t\tDisplayName\t\t=\tCassette {disp_script} (B-Side),",
                     f"\t\tWorldStaticModel = {args.mod_id}.{model_name},",
                     "\t\tCanSpawn\t\t=\ttrue,",
                     "\t}",
@@ -2068,7 +2069,7 @@ def build_vinyl(args, on_track: Optional[Callable[[BuildTrackEvent], None]] = No
             cand = Path(raw_b)
             if cand.exists() and cand.is_file():
                 side_b_path = cand.resolve()
-                side_b_out_name = f"Vinyl{iid}SideB.ogg"
+                side_b_out_name = _safe_audio_output_name(ogg.name, side_b=True)
                 shutil.copy2(side_b_path, paths["sound"] / side_b_out_name)
 
         if not use_random_for_song:
@@ -2092,7 +2093,7 @@ def build_vinyl(args, on_track: Optional[Callable[[BuildTrackEvent], None]] = No
             if candidate_thumb.exists():
                 thumb_path = candidate_thumb
 
-        ogg_out_name = f"Vinyl{iid}.ogg"
+        ogg_out_name = _safe_audio_output_name(ogg.name)
         shutil.copy2(ogg, paths["sound"] / ogg_out_name)
 
         item_album_png = f"item_TMVinylalbum_{iid}.png"
@@ -2199,7 +2200,7 @@ def build_vinyl(args, on_track: Optional[Callable[[BuildTrackEvent], None]] = No
                 "\t\tDisplayCategory = Entertainment,",
                 "\t\tWeight\t\t\t=\t0.05,",
                 f"\t\tIcon\t\t\t=\t{item_album_icon},",
-                f"\t\tDisplayName\t\t=\t{_pz_script_str(f'Vinyl Album {disp_script}')},",
+                f"\t\tDisplayName\t\t=\tVinyl Album {disp_script},",
                 f"\t\tWorldStaticModel = {module_name}.TMVinylalbum_{iid},",
                 "\t\tCanSpawn\t\t=\ttrue,",
                 "\t}",
@@ -2210,7 +2211,7 @@ def build_vinyl(args, on_track: Optional[Callable[[BuildTrackEvent], None]] = No
                 "\t\tDisplayCategory = Entertainment,",
                 "\t\tWeight\t\t\t=\t0.02,",
                 f"\t\tIcon\t\t\t=\t{item_record_icon},",
-                f"\t\tDisplayName\t\t=\t{_pz_script_str(f'Vinyl {disp_script} (A-Side)')},",
+                f"\t\tDisplayName\t\t=\tVinyl {disp_script} (A-Side),",
                 f"\t\tWorldStaticModel = {module_name}.TMVinylrecord_{iid},",
                 "\t\tCanSpawn\t\t=\ttrue,",
                 "\t}",
@@ -2258,7 +2259,7 @@ def build_vinyl(args, on_track: Optional[Callable[[BuildTrackEvent], None]] = No
                     "\t\tDisplayCategory = Entertainment,",
                     "\t\tWeight\t\t\t=\t0.02,",
                     f"\t\tIcon\t\t\t=\t{item_record_icon},",
-                    f"\t\tDisplayName\t\t=\t{_pz_script_str(f'Vinyl {disp_script} (B-Side)')},",
+                    f"\t\tDisplayName\t\t=\tVinyl {disp_script} (B-Side),",
                     f"\t\tWorldStaticModel = {module_name}.TMVinylrecord_{iid},",
                     "\t\tCanSpawn\t\t=\ttrue,",
                     "\t}",
